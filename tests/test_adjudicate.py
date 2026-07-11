@@ -77,6 +77,14 @@ def test_benign_verdict_suppresses(tmp_path):
     assert not verdict.keep
 
 
+def test_wrong_verdict_keeps(tmp_path):
+    # models hallucinate WRONG verdicts; only BENIGN may suppress
+    f = _finding(tmp_path)
+    judged = adjudicate([f], FakeClient('{"verdict": "WRONG", "reason": "no nest"}'))
+    (_, verdict), = judged
+    assert verdict.keep
+
+
 def test_prompt_contains_function_source(tmp_path):
     f = _finding(tmp_path)
     prompt = build_prompt(f)

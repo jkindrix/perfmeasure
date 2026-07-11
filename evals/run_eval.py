@@ -56,7 +56,7 @@ def main():
         judged = adjudicate([f for f, _ in labeled], client)
         elapsed = time.time() - t0
 
-        label_hits = keep_hits = unadjudicated = 0
+        label_hits = unadjudicated = noise = noise_kept = 0
         false_suppress = []  # worst error: a real finding silenced
         for (finding, expected), (_, verdict) in zip(labeled, judged):
             expected_keep = expected == "ACTIONABLE"
@@ -64,9 +64,11 @@ def main():
                 unadjudicated += 1
             if verdict.label == expected:
                 label_hits += 1
-            if verdict.keep == expected_keep:
-                keep_hits += 1
-            elif expected_keep:
+            if not expected_keep:
+                noise += 1
+                if verdict.keep:
+                    noise_kept += 1
+            elif not verdict.keep:
                 false_suppress.append((finding, verdict))
             mark = "ok " if verdict.keep == expected_keep else "MISS"
             loc = f"{os.path.basename(finding.file)}:{finding.line}"
@@ -74,10 +76,10 @@ def main():
 
         n = len(labeled)
         print(f"\n{model}:")
-        print(f"  keep/suppress accuracy: {keep_hits}/{n} ({100 * keep_hits // n}%)")
-        print(f"  exact label agreement:  {label_hits}/{n} ({100 * label_hits // n}%)")
         print(f"  false suppressions:     {len(false_suppress)}"
               + "".join(f"\n    - {f.file}:{f.line} ({v.reason})" for f, v in false_suppress))
+        print(f"  noise suppressed:       {noise - noise_kept}/{noise}")
+        print(f"  exact label agreement:  {label_hits}/{n} ({100 * label_hits // n}%)")
         print(f"  unadjudicated:          {unadjudicated}")
         print(f"  time: {elapsed:.0f}s ({elapsed / n:.1f}s/finding)\n")
 

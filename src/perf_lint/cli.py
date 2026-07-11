@@ -84,6 +84,9 @@ def main() -> None:
             api_key=os.environ.get("PERF_LINT_LLM_KEY"),
         )
         judged = adjudicate(findings, client)
+        for f, v in judged:
+            if v.keep and v.label == "WRONG":
+                f.message += f" [adjudicator disputes: {v.reason}]"
         findings = [f for f, v in judged if v.keep]
         suppressed = [(f, f"[{v.label}] {v.reason}") for f, v in judged if not v.keep]
     if args.json:

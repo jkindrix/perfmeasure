@@ -39,7 +39,8 @@ plausibly grow with real data (records, users, input items) — worth reporting.
 - BENIGN: technically correct, but the collections are structurally small or \
 bounded (fixed config tables, enum sets, template fields), so nobody would act on it.
 - WRONG: the analyzer's reasoning is factually incorrect (loops don't multiply as \
-claimed, the operation is not linear, early exit bounds the work).
+claimed, the operation is not linear, early exit bounds the work). If the real \
+cost is the same or WORSE than claimed, the finding is ACTIONABLE, not WRONG.
 
 Answer with ONLY this JSON, nothing else:
 {{"verdict": "ACTIONABLE" | "BENIGN" | "WRONG", "reason": "<one sentence>"}}"""
@@ -52,7 +53,11 @@ class Verdict:
 
     @property
     def keep(self) -> bool:
-        return self.label in (ACTIONABLE, UNADJUDICATED)
+        # Suppress on BENIGN only. Empirically (evals/, 2026-07-11) every false
+        # suppression came from a WRONG verdict — models hallucinating that the
+        # analyzer's math is wrong — while BENIGN verdicts were never wrong.
+        # WRONG therefore keeps the finding, annotated as disputed.
+        return self.label != BENIGN
 
 
 class LLMClient:
