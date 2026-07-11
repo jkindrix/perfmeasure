@@ -9,7 +9,11 @@ from perf_lint.analysis import HIGH, MED, UNKNOWN, Finding
 _ORDER = {HIGH: 0, MED: 1, UNKNOWN: 2}
 
 
-def render(findings: list[Finding], verbose: bool = False) -> str:
+def render(
+    findings: list[Finding],
+    verbose: bool = False,
+    suppressed: list[tuple[Finding, str]] | None = None,
+) -> str:
     shown = [f for f in findings if verbose or f.severity != UNKNOWN]
     shown.sort(key=lambda f: (f.file, f.line, _ORDER[f.severity]))
 
@@ -21,6 +25,11 @@ def render(findings: list[Finding], verbose: bool = False) -> str:
         )
     if shown:
         lines.append("")
+    if suppressed and verbose:
+        lines.append("suppressed by adjudication:")
+        for f, reason in suppressed:
+            lines.append(f"  {f.file}:{f.line} {f.complexity} — {reason}")
+        lines.append("")
 
     high = sum(1 for f in findings if f.severity == HIGH)
     med = sum(1 for f in findings if f.severity == MED)
@@ -29,6 +38,10 @@ def render(findings: list[Finding], verbose: bool = False) -> str:
         summary = f"{high + med} finding{'s' if high + med != 1 else ''} ({high} high, {med} medium)"
     else:
         summary = "No findings."
+    if suppressed:
+        summary += f" — {len(suppressed)} suppressed by adjudication"
+        if not verbose:
+            summary += " (--verbose to list)"
     if unknown and not verbose:
         summary += f" — {unknown} unanalyzed (rerun with --verbose)"
     lines.append(summary)

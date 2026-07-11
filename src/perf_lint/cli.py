@@ -55,11 +55,39 @@ def main() -> None:
         help="also show UNKNOWN verdicts (unanalyzable loops, recursion)",
     )
     ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument(
+        "--adjudicate", action="store_true",
+        help="review findings with an LLM and suppress benign/wrong ones "
+        "(suppress-only; fails open)",
+    )
+    ap.add_argument(
+        "--llm-model",
+        default=os.environ.get("PERF_LINT_LLM_MODEL"),
+        help="model name for --adjudicate (env: PERF_LINT_LLM_MODEL)",
+    )
+    ap.add_argument(
+        "--llm-url",
+        default=os.environ.get("PERF_LINT_LLM_URL", "http://localhost:11434/v1"),
+        help="OpenAI-compatible base URL (env: PERF_LINT_LLM_URL)",
+    )
     args = ap.parse_args()
 
     findings = run(args.paths)
+    suppressed = None
+    if args.adjudicate:
+        if not args.llm_model:
+            ap.error("--adjudicate requires --llm-model or PERF_LINT_LLM_MODEL")
+        from perf_lint.adjudicate import LLMClient, adjudicate
+
+        client = LLMClient(
+            args.llm_url, args.llm_model,
+            api_key=os.environ.get("PERF_LINT_LLM_KEY"),
+        )
+        judged = adjudicate(findings, client)
+        findings = [f for f, v in judged if v.keep]
+        suppressed = [(f, f"[{v.label}] {v.reason}") for f, v in judged if not v.keep]
     if args.json:
         print(render_json(findings, verbose=args.verbose))
     else:
-        print(render(findings, verbose=args.verbose))
+        print(render(findings, verbose=args.verbose, suppressed=suppressed))
     sys.exit(1 if any(f.severity != UNKNOWN for f in findings) else 0)

@@ -53,6 +53,7 @@ class Function:
     name: str
     file: str
     line: int
+    end_line: int = 0
     params: list[str] = field(default_factory=list)  # positional, self/cls dropped
     body: list[Node] = field(default_factory=list)
 

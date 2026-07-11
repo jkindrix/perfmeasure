@@ -57,6 +57,7 @@ class PythonAdapter:
                 name = self._text(child.child_by_field_name("name"))
                 fn = Function(
                     name=name, file=path, line=child.start_point[0] + 1,
+                    end_line=child.end_point[0] + 1,
                     params=self._param_names(child.child_by_field_name("parameters")),
                 )
                 body = child.child_by_field_name("body")
