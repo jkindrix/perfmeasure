@@ -262,6 +262,35 @@ def test_helper_not_flagged_outside_loop():
     assert findings == []
 
 
+def test_method_call_does_not_match_global_function():
+    findings = analyze("""
+        def replace(template, ctx):
+            for key in ctx:
+                template = 1
+
+        def render(pages, mapping):
+            for page in pages:
+                page.replace("a", mapping)
+    """)
+    assert [f for f in findings if f.function == "render"] == []
+
+
+def test_self_method_call_resolves_to_summary():
+    findings = analyze("""
+        class Store:
+            def scan(self, records):
+                for r in records:
+                    pass
+
+            def refresh(self, records):
+                for r in records:
+                    self.scan(records)
+    """)
+    flagged = [f for f in findings if f.function == "refresh"]
+    assert [f.severity for f in flagged] == [HIGH]
+    assert flagged[0].complexity == "O(n^2)"
+
+
 def test_ambiguous_helper_name_skipped():
     findings = analyze("""
         def scan(users):

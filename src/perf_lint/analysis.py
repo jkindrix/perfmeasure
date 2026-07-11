@@ -160,7 +160,14 @@ def _walk(nodes, stack, bound, fn, costs, summaries, displays):
             if node.callee == fn.name or node.callee.endswith("." + fn.name):
                 yield _Event("recursion", node, stack, [], [], displays)
             elif summaries is not None:
-                name = node.callee.rsplit(".", 1)[-1]
+                if "." in node.callee:
+                    prefix, name = node.callee.rsplit(".", 1)
+                    # a method on an arbitrary object is NOT the project
+                    # function of the same name (html.replace != lib.replace)
+                    if prefix not in ("self", "cls"):
+                        continue
+                else:
+                    name = node.callee
                 summary = summaries.get(name)
                 if summary is None:
                     continue
