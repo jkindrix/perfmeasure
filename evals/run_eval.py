@@ -25,7 +25,7 @@ def load_labeled_findings():
     with open(os.path.join(os.path.dirname(__file__), "labels.json")) as f:
         spec = json.load(f)
     repos = [os.path.expanduser(r) for r in spec["repos"]]
-    findings = run(repos)
+    findings, functions = run(repos)
     labeled = []
     for label in spec["labels"]:
         match = [
@@ -38,7 +38,7 @@ def load_labeled_findings():
             print(f"!! label matched {len(match)} findings, expected 1: {label}")
             continue
         labeled.append((match[0], label["expected"]))
-    return labeled
+    return labeled, functions
 
 
 def main():
@@ -47,13 +47,13 @@ def main():
     ap.add_argument("--url", default="http://localhost:11434/v1")
     args = ap.parse_args()
 
-    labeled = load_labeled_findings()
+    labeled, functions = load_labeled_findings()
     print(f"{len(labeled)} labeled findings\n")
 
     for model in args.models:
         client = LLMClient(args.url, model, api_key=os.environ.get("PERF_LINT_LLM_KEY"))
         t0 = time.time()
-        judged = adjudicate([f for f, _ in labeled], client)
+        judged = adjudicate([f for f, _ in labeled], client, functions)
         elapsed = time.time() - t0
 
         label_hits = unadjudicated = noise = noise_kept = 0

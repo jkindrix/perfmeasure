@@ -7,6 +7,7 @@ from perf_lint.adjudicate import (
     UNADJUDICATED,
     Verdict,
     adjudicate,
+    build_caller_index,
     build_prompt,
     parse_verdict,
 )
@@ -90,3 +91,28 @@ def test_prompt_contains_function_source(tmp_path):
     prompt = build_prompt(f)
     assert "def find_dupes" in prompt
     assert "O(n^2)" in prompt
+
+
+def test_prompt_includes_caller_snippets(tmp_path):
+    src = textwrap.dedent("""
+        def find_dupes(items):
+            for a in items:
+                for b in items:
+                    pass
+
+        def audit(records):
+            return find_dupes(records)
+    """)
+    path = tmp_path / "mod.py"
+    path.write_text(src)
+    fns = PythonAdapter().parse(str(path), src.encode())
+    costs = load_costs("python")
+    findings = [
+        f for fn in fns
+        for f in analyze_function(fn, costs, build_summaries(fns, costs))
+    ]
+    index = build_caller_index(fns)
+    (f,) = [f for f in findings if f.function == "find_dupes"]
+    prompt = build_prompt(f, index.get(f.function))
+    assert "Call sites of `find_dupes`" in prompt
+    assert "find_dupes(records)" in prompt

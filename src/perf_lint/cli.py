@@ -29,7 +29,7 @@ def collect_files(paths: list[str]) -> list[str]:
     return files
 
 
-def run(paths: list[str]) -> list[Finding]:
+def run(paths: list[str]) -> tuple[list[Finding], list]:
     functions = []
     for path in collect_files(paths):
         adapter = next(a for a in ADAPTERS if path.endswith(a.extensions))
@@ -41,7 +41,7 @@ def run(paths: list[str]) -> list[Finding]:
     findings: list[Finding] = []
     for fn in functions:
         findings.extend(analyze_function(fn, costs, summaries))
-    return findings
+    return findings, functions
 
 
 def main() -> None:
@@ -72,7 +72,7 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    findings = run(args.paths)
+    findings, functions = run(args.paths)
     suppressed = None
     if args.adjudicate:
         if not args.llm_model:
@@ -83,7 +83,7 @@ def main() -> None:
             args.llm_url, args.llm_model,
             api_key=os.environ.get("PERF_LINT_LLM_KEY"),
         )
-        judged = adjudicate(findings, client)
+        judged = adjudicate(findings, client, functions)
         for f, v in judged:
             if v.keep and v.label == "WRONG":
                 f.message += f" [adjudicator disputes: {v.reason}]"

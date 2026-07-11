@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from perf_lint.adapters import ADAPTERS
 from perf_lint.analysis import UNKNOWN, Finding
+from perf_lint.ir import Call, Function, Loop
 
 ACTIONABLE = "ACTIONABLE"
 BENIGN = "BENIGN"
@@ -32,7 +33,7 @@ Source of `{function}` ({file}, lines {start}-{end}):
 ```
 {source}
 ```
-
+{callers_section}
 Classify the finding:
 - ACTIONABLE: the complexity claim is correct AND the collections involved can \
 plausibly grow with real data (records, users, input items) — worth reporting.
@@ -87,7 +88,9 @@ class LLMClient:
         return data["choices"][0]["message"]["content"]
 
 
-def build_prompt(finding: Finding) -> str | None:
+def build_prompt(
+    finding: Finding, callers: list[tuple[Function, int]] | None = None
+) -> str | None:
     source = _function_source(finding)
     if source is None:
         return None
@@ -96,6 +99,51 @@ def build_prompt(finding: Finding) -> str | None:
         file=finding.file, line=finding.line, severity=finding.severity,
         complexity=finding.complexity, function=finding.function,
         message=finding.message, start=start, end=end, source=text,
+        callers_section=_callers_section(finding.function, callers),
+    )
+
+
+def build_caller_index(
+    functions: list[Function],
+) -> dict[str, list[tuple[Function, int]]]:
+    """Map bare function name -> call sites (caller function, line)."""
+    index: dict[str, list[tuple[Function, int]]] = {}
+    for fn in functions:
+        for call in _iter_calls(fn.body):
+            name = call.callee.rsplit(".", 1)[-1]
+            if name != fn.name:  # recursion isn't caller context
+                index.setdefault(name, []).append((fn, call.line))
+    return index
+
+
+def _iter_calls(nodes):
+    for node in nodes:
+        if isinstance(node, Call):
+            yield node
+        elif isinstance(node, Loop):
+            yield from _iter_calls(node.body)
+
+
+def _callers_section(
+    function: str, callers: list[tuple[Function, int]] | None
+) -> str:
+    if not callers:
+        return ""
+    parts = []
+    for fn, line in callers[:3]:
+        try:
+            with open(fn.file, encoding="utf8", errors="replace") as fh:
+                lines = fh.read().splitlines()
+        except OSError:
+            continue
+        lo = max(1, line - 2)
+        snippet = "\n".join(lines[lo - 1 : line + 2])
+        parts.append(f"{fn.file}:{line} in `{fn.name}`:\n```\n{snippet}\n```")
+    if not parts:
+        return ""
+    return (
+        f"\nCall sites of `{function}` found in the project "
+        "(context for how big its inputs get):\n" + "\n".join(parts) + "\n"
     )
 
 
@@ -114,14 +162,17 @@ def parse_verdict(response: str) -> Verdict | None:
 
 
 def adjudicate(
-    findings: list[Finding], client: LLMClient
+    findings: list[Finding],
+    client: LLMClient,
+    functions: list[Function] | None = None,
 ) -> list[tuple[Finding, Verdict]]:
+    caller_index = build_caller_index(functions) if functions else {}
     out: list[tuple[Finding, Verdict]] = []
     for f in findings:
         if f.severity == UNKNOWN:
             out.append((f, Verdict(UNADJUDICATED, "unknown verdicts are not adjudicated")))
             continue
-        prompt = build_prompt(f)
+        prompt = build_prompt(f, caller_index.get(f.function))
         if prompt is None:
             out.append((f, Verdict(UNADJUDICATED, "could not extract function source")))
             continue
