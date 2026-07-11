@@ -1,0 +1,36 @@
+# Cost classes per operation and receiver kind:
+#   "linear"           O(len(receiver))  per call
+#   "nlogn"            O(n log n) in the receiver per call
+#   "const"            O(1) — never contributes
+#   "quadratic_growth" per-call cost tracks the enclosing iteration count
+# Missing entry (e.g. unknown receiver kind) = skip silently: never guess.
+
+[contains]  # `x in recv`
+list = "linear"
+tuple = "linear"
+set = "const"
+dict = "const"
+
+[str_concat]  # `s += ...` on a str
+str = "quadratic_growth"
+
+[method.index]
+list = "linear"
+
+[method.count]
+list = "linear"
+
+[method.remove]
+list = "linear"
+
+[method.insert]
+list = "linear"
+
+[method.pop]  # adapter only emits this when called with a non-tail index
+list = "linear"
+
+[method.sort]
+list = "nlogn"
+
+[function.sorted]
+any = "nlogn"

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import re
+
 from perf_lint.analysis import HIGH, MED, UNKNOWN, Finding
 
 _ORDER = {HIGH: 0, MED: 1, UNKNOWN: 2}
@@ -29,3 +33,29 @@ def render(findings: list[Finding], verbose: bool = False) -> str:
         summary += f" — {unknown} unanalyzed (rerun with --verbose)"
     lines.append(summary)
     return "\n".join(lines)
+
+
+def finding_id(f: Finding) -> str:
+    # line numbers stripped so ids survive unrelated edits above the finding
+    stable = re.sub(r"\d+", "", f"{f.file}|{f.function}|{f.severity}|{f.complexity}|{f.message}")
+    return hashlib.sha1(stable.encode()).hexdigest()[:12]
+
+
+def render_json(findings: list[Finding], verbose: bool = False) -> str:
+    shown = [f for f in findings if verbose or f.severity != UNKNOWN]
+    shown.sort(key=lambda f: (f.file, f.line, _ORDER[f.severity]))
+    return json.dumps(
+        [
+            {
+                "id": finding_id(f),
+                "file": f.file,
+                "line": f.line,
+                "function": f.function,
+                "severity": f.severity,
+                "complexity": f.complexity,
+                "message": f.message,
+            }
+            for f in shown
+        ],
+        indent=2,
+    )

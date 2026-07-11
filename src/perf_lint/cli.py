@@ -5,10 +5,12 @@ import os
 import sys
 
 from perf_lint.adapters import ADAPTERS
-from perf_lint.analysis import UNKNOWN, Finding, analyze_function
-from perf_lint.report import render
+from perf_lint.analysis import UNKNOWN, Finding, analyze_function, build_summaries
+from perf_lint.costs import load_costs
+from perf_lint.report import render, render_json
 
 SKIP_DIRS = {"__pycache__"}
+LANGUAGES = {".py": "python"}
 
 
 def collect_files(paths: list[str]) -> list[str]:
@@ -28,13 +30,17 @@ def collect_files(paths: list[str]) -> list[str]:
 
 
 def run(paths: list[str]) -> list[Finding]:
-    findings: list[Finding] = []
+    functions = []
     for path in collect_files(paths):
         adapter = next(a for a in ADAPTERS if path.endswith(a.extensions))
         with open(path, "rb") as f:
             source = f.read()
-        for fn in adapter.parse(path, source):
-            findings.extend(analyze_function(fn))
+        functions.extend(adapter.parse(path, source))
+    costs = load_costs("python")
+    summaries = build_summaries(functions, costs)
+    findings: list[Finding] = []
+    for fn in functions:
+        findings.extend(analyze_function(fn, costs, summaries))
     return findings
 
 
@@ -48,8 +54,12 @@ def main() -> None:
         "-v", "--verbose", action="store_true",
         help="also show UNKNOWN verdicts (unanalyzable loops, recursion)",
     )
+    ap.add_argument("--json", action="store_true", help="machine-readable output")
     args = ap.parse_args()
 
     findings = run(args.paths)
-    print(render(findings, verbose=args.verbose))
+    if args.json:
+        print(render_json(findings, verbose=args.verbose))
+    else:
+        print(render(findings, verbose=args.verbose))
     sys.exit(1 if any(f.severity != UNKNOWN for f in findings) else 0)

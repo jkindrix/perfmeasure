@@ -2,14 +2,17 @@ import os
 import textwrap
 
 from perf_lint.adapters.python import PythonAdapter
-from perf_lint.analysis import HIGH, MED, UNKNOWN, analyze_function
+from perf_lint.analysis import HIGH, MED, UNKNOWN, analyze_function, build_summaries
+from perf_lint.costs import load_costs
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
+COSTS = load_costs("python")
 
 
 def analyze(src: str):
     fns = PythonAdapter().parse("test.py", textwrap.dedent(src).encode())
-    return [f for fn in fns for f in analyze_function(fn)]
+    summaries = build_summaries(fns, COSTS)
+    return [f for fn in fns for f in analyze_function(fn, COSTS, summaries)]
 
 
 def analyze_fixture(name: str):
@@ -17,7 +20,8 @@ def analyze_fixture(name: str):
     with open(path, "rb") as f:
         source = f.read()
     fns = PythonAdapter().parse(path, source)
-    return [f for fn in fns for f in analyze_function(fn)]
+    summaries = build_summaries(fns, COSTS)
+    return [f for fn in fns for f in analyze_function(fn, COSTS, summaries)]
 
 
 def test_quadratic_same_list_fixture():
@@ -119,3 +123,157 @@ def test_single_loop_not_flagged():
             return s
     """)
     assert findings == []
+
+
+# -- M2: cost tables ---------------------------------------------------------
+
+
+def test_membership_on_grown_list_is_quadratic():
+    findings = analyze("""
+        def dedupe(items):
+            seen = []
+            for x in items:
+                if x in seen:
+                    continue
+                seen.append(x)
+            return seen
+    """)
+    assert [f.severity for f in findings] == [HIGH]
+    assert findings[0].complexity == "O(n^2)"
+    assert "use a set" in findings[0].message
+
+
+def test_membership_on_set_not_flagged():
+    findings = analyze("""
+        def dedupe(items):
+            seen = set()
+            for x in items:
+                if x in seen:
+                    continue
+                seen.add(x)
+            return seen
+    """)
+    assert findings == []
+
+
+def test_membership_on_inferred_list_param():
+    findings = analyze("""
+        def merge(items, acc):
+            for x in items:
+                if x not in acc:
+                    acc.append(x)
+    """)
+    assert [f.severity for f in findings] == [MED]
+    assert findings[0].complexity == "O(n*m)"
+
+
+def test_membership_unknown_type_is_silent():
+    findings = analyze("""
+        def check(items, allowed):
+            for x in items:
+                if x in allowed:
+                    print(x)
+    """)
+    assert findings == []
+
+
+def test_sorted_inside_loop():
+    findings = analyze("""
+        def ranks(xs):
+            for x in xs:
+                order = sorted(xs)
+    """)
+    assert [f.severity for f in findings] == [HIGH]
+    assert findings[0].complexity == "O(n^2*log n)"
+
+
+def test_string_concat_in_loop_is_quadratic():
+    findings = analyze("""
+        def join_all(items):
+            s = ""
+            for x in items:
+                s += str(x)
+            return s
+    """)
+    assert [f.severity for f in findings] == [HIGH]
+    assert findings[0].complexity == "O(n^2)"
+
+
+def test_insert_zero_in_loop():
+    findings = analyze("""
+        def rev(items, out):
+            for x in items:
+                out.insert(0, x)
+    """)
+    assert [f.severity for f in findings] == [MED]
+    assert findings[0].complexity == "O(n*m)"
+
+
+def test_pop_without_index_not_flagged():
+    findings = analyze("""
+        def drain(items, stack):
+            for x in items:
+                stack.pop()
+    """)
+    assert findings == []
+
+
+def test_membership_on_string_literal_not_flagged():
+    findings = analyze("""
+        def vowels(text):
+            count = 0
+            for ch in text:
+                if ch in "aeiou":
+                    count += 1
+            return count
+    """)
+    assert findings == []
+
+
+# -- M2: call summaries --------------------------------------------------------
+
+
+def test_linear_helper_called_in_loop():
+    findings = analyze("""
+        def find_by_id(users, uid):
+            for u in users:
+                if u.id == uid:
+                    return u
+
+        def enrich(users):
+            for u in users:
+                match = find_by_id(users, u.id)
+    """)
+    flagged = [f for f in findings if f.function == "enrich"]
+    assert [f.severity for f in flagged] == [HIGH]
+    assert flagged[0].complexity == "O(n^2)"
+    assert "find_by_id" in flagged[0].message
+
+
+def test_helper_not_flagged_outside_loop():
+    findings = analyze("""
+        def scan(users):
+            for u in users:
+                pass
+
+        def once(users):
+            scan(users)
+    """)
+    assert findings == []
+
+
+def test_ambiguous_helper_name_skipped():
+    findings = analyze("""
+        def scan(users):
+            for u in users:
+                pass
+
+        def scan(items):
+            for i in items:
+                pass
+
+        def caller(users):
+            for u in users:
+                scan(users)
+    """)
+    assert [f for f in findings if f.function == "caller"] == []
