@@ -10,7 +10,12 @@ Usage:
   python evals/wild.py            # scan targets, compare to wild-baseline.json
   python evals/wild.py --update   # rewrite the baseline to current results
 
-Regression = a target's measured count dropping below baseline. New
+Regression = a target's STRUCTURALLY drivable count (measured plus
+budget-bound: TIMEOUT / insufficient_range) dropping below baseline.
+Structural drivability — types supported, planning, discovery — is
+deterministic; the measured count alone also moves with machine timing,
+because borderline ladders flip between measured and insufficient_range
+with load, so its drift is reported but never fails the gate. New
 undrivable reasons are reported (they're the next whitelist/feature work).
 Targets live in wild.json; missing paths are skipped with a note so the
 file stays portable across machines.
@@ -47,22 +52,40 @@ def scan_one(target: dict, budget: float) -> dict | None:
     else:
         reports, _, _ = scan_target(str(path), Budget(per_function_s=budget))
     measured = sum(r.provenance in ("MEASURED", "AMBIGUOUS") for r in reports)
-    reasons = Counter((r.provenance_detail or "").split(":")[0]
-                      for r in reports if r.provenance == "UNDRIVABLE")
+    # budget-bound outcomes were DRIVEN (inputs generated, calls ran) but
+    # the ladder ran out of budget or points — a timing fact, not a lost
+    # capability; they count toward structural drivability
+    budget_bound = sum(
+        r.provenance == "TIMEOUT"
+        or (r.provenance == "UNDRIVABLE"
+            and (r.provenance_detail or "").startswith("insufficient_range"))
+        for r in reports)
+    reasons = Counter(
+        (r.provenance_detail or "").split(":")[0]
+        for r in reports
+        if r.provenance == "UNDRIVABLE"
+        and not (r.provenance_detail or "").startswith("insufficient_range"))
     return {"functions": len(reports), "measured": measured,
+            "structural": measured + budget_bound,
+            "budget_bound": budget_bound,
             "reasons": dict(reasons)}
 
 
 def regressions(name: str, result: dict, base: dict | None) -> list[str]:
     """Drivability regressions for one target vs its baseline: a drop in
-    measured count fails; new undrivable reasons are reported (they are
-    the next whitelist/feature work) but do not fail."""
+    the STRUCTURAL count (measured + budget-bound) fails — that count is
+    machine-deterministic. A measured-only drop is timing, not loss, and
+    is visible in the per-target line instead. New undrivable reasons
+    are reported (they are the next whitelist/feature work) but do not
+    fail. (Baselines predating the structural field fall back to their
+    measured count.)"""
     if not base:
         return []
     out = []
-    if result["measured"] < base["measured"]:
-        out.append(f"{name}: measured {result['measured']} < "
-                   f"baseline {base['measured']}")
+    base_structural = base.get("structural", base["measured"])
+    if result["structural"] < base_structural:
+        out.append(f"{name}: structurally drivable {result['structural']} < "
+                   f"baseline {base_structural}")
     return out
 
 
@@ -91,7 +114,9 @@ def main() -> int:
         results[name] = r
         base = baseline.get(name)
         ratio = f"{r['measured']}/{r['functions']}"
-        print(f"{name}: {ratio} measured; reasons: "
+        bb = (f" (+{r['budget_bound']} budget-bound)"
+              if r["budget_bound"] else "")
+        print(f"{name}: {ratio} measured{bb}; reasons: "
               + (", ".join(f"{k or 'other'}: {v}"
                            for k, v in sorted(r["reasons"].items(),
                                               key=lambda kv: -kv[1]))

@@ -2,6 +2,8 @@
   "~/rust-expect/crates/rust-expect": {
     "functions": 963,
     "measured": 210,
+    "structural": 211,
+    "budget_bound": 1,
     "reasons": {
       "param 'command'": 2,
       "generic": 17,
@@ -94,6 +96,8 @@
   "~/rust-expect/crates/rust-pty": {
     "functions": 24,
     "measured": 3,
+    "structural": 3,
+    "budget_bound": 0,
     "reasons": {
       "no_scalable_params": 9,
       "param 'path'": 1,
@@ -107,6 +111,8 @@
   "~/claude-snatch": {
     "functions": 655,
     "measured": 74,
+    "structural": 74,
+    "budget_bound": 0,
     "reasons": {
       "method (self receiver; no synthesizable constructor for PromptSource)": 1,
       "method (self receiver; no synthesizable constructor for SessionChunk)": 1,
@@ -207,6 +213,8 @@
   "~/rust-mssql-driver/crates/mssql-codec": {
     "functions": 18,
     "measured": 2,
+    "structural": 2,
+    "budget_bound": 0,
     "reasons": {
       "method (self receiver; no synthesizable constructor for CodecError)": 2,
       "param 'packet'": 2,
@@ -219,6 +227,8 @@
   "src/perfmeasure": {
     "functions": 66,
     "measured": 16,
+    "structural": 16,
+    "budget_bound": 0,
     "reasons": {
       "no_scalable_params": 12,
       "rejected": 13,
@@ -240,7 +250,9 @@
   },
   "~/perfmeasure-wild/python-sortedcontainers/src/sortedcontainers": {
     "functions": 94,
-    "measured": 57,
+    "measured": 53,
+    "structural": 57,
+    "budget_bound": 4,
     "reasons": {
       "no_scalable_params": 7,
       "rejected": 20,
@@ -252,6 +264,8 @@
   "~/perfmeasure-wild/humanize/src/humanize": {
     "functions": 21,
     "measured": 15,
+    "structural": 15,
+    "budget_bound": 0,
     "reasons": {
       "rejected": 1,
       "no_scalable_params": 4,
@@ -260,19 +274,23 @@
   },
   "~/perfmeasure-wild/memchr": {
     "functions": 127,
-    "measured": 50,
+    "measured": 54,
+    "structural": 54,
+    "budget_bound": 0,
     "reasons": {
       "unsafe fn (safety contract cannot be assumed)": 30,
       "generic": 18,
-      "rejected": 8,
       "no_scalable_params": 16,
       "cfg_inactive": 4,
+      "rejected": 4,
       "param 'prefilter'": 1
     }
   },
   "~/perfmeasure-wild/bytecount": {
     "functions": 4,
     "measured": 2,
+    "structural": 2,
+    "budget_bound": 0,
     "reasons": {
       "cfg_inactive": 2
     }

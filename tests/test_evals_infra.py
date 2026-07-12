@@ -29,15 +29,30 @@ def test_update_readme_fails_loud_without_markers(tmp_path):
         harness._update_readme(1, 1, 1, 1.0, 1, 1, 1, 1, 1.0, readme=readme)
 
 
-def test_wild_regression_is_a_measured_drop():
-    base = {"functions": 10, "measured": 5, "reasons": {"generic": 2}}
-    same = {"functions": 10, "measured": 5, "reasons": {"generic": 2}}
-    drop = {"functions": 10, "measured": 4, "reasons": {"generic": 2}}
-    gain = {"functions": 12, "measured": 7, "reasons": {"generic": 2}}
+def test_wild_regression_is_a_structural_drop():
+    base = {"functions": 10, "measured": 5, "structural": 5,
+            "reasons": {"generic": 2}}
+    same = {"functions": 10, "measured": 5, "structural": 5,
+            "reasons": {"generic": 2}}
+    drop = {"functions": 10, "measured": 4, "structural": 4,
+            "reasons": {"generic": 2}}
+    gain = {"functions": 12, "measured": 7, "structural": 7,
+            "reasons": {"generic": 2}}
+    # timing flip: a borderline ladder moved from measured to
+    # budget-bound — structural count holds, so the gate must not fail
+    flip = {"functions": 10, "measured": 4, "structural": 5,
+            "budget_bound": 1, "reasons": {"generic": 2}}
     assert wild.regressions("t", same, base) == []
     assert wild.regressions("t", gain, base) == []
-    assert wild.regressions("t", drop, base) == ["t: measured 4 < baseline 5"]
+    assert wild.regressions("t", flip, base) == []
+    assert wild.regressions("t", drop, base) == [
+        "t: structurally drivable 4 < baseline 5"]
     assert wild.regressions("t", drop, None) == []
+    # baselines predating the structural field gate on their measured count
+    old_base = {"functions": 10, "measured": 5, "reasons": {}}
+    assert wild.regressions("t", flip, old_base) == []
+    assert wild.regressions("t", drop, old_base) == [
+        "t: structurally drivable 4 < baseline 5"]
 
 
 def test_wild_new_reasons_reported_not_failed():

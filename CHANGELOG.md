@@ -60,7 +60,12 @@ class, not the instances.
   circularity (thresholds tuned on the same corpus the gate scores);
   `--python`/`--features` warn instead of being silently ignored on the
   wrong language; the wild gate prints its coverage and fails when zero
-  targets exist instead of passing vacuously; stale CLI docstring
+  targets exist instead of passing vacuously; the wild gate also now
+  regresses on the STRUCTURAL drivability count (measured +
+  budget-bound TIMEOUT/insufficient_range) — borderline ladders flip
+  between measured and insufficient_range with machine timing (observed:
+  53-57 measured, structural invariant at 57), so gating on measured
+  alone cried wolf; stale CLI docstring
   rewritten; version sync (pyproject vs `TOOL_VERSION`) is now a test;
   the instructions-channel variance claim was re-measured and corrected
   (<2% worst-point run-to-run, previously stated <1%).
