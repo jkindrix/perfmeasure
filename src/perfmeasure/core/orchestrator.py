@@ -76,6 +76,10 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
     report.max_n_reached = max(
         (p.n for s in run.shapes for p in s.points), default=0)
     report.wall_used_s = time.perf_counter() - started
+    # hello is only populated after the first request; refresh now
+    report.environment = {"runtime": session.hello.get("runtime", "?")}
+    report.allocator = session.hello.get(
+        "capabilities", {}).get("memory") or "unknown"
     if run.mutates:
         report.flags["mutates_input"] = True
 

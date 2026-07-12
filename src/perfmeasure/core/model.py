@@ -161,6 +161,7 @@ class FunctionReport:
     max_n_reached: int = 0
     flags: dict[str, Any] = field(default_factory=dict)
     environment: dict[str, str] = field(default_factory=dict)
+    allocator: str = "tracemalloc"   # runner's declared memory semantics
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -176,7 +177,7 @@ class FunctionReport:
                 "cls": self.space_cls,
                 "candidates": self.space_candidates,
                 "worst_shape": self.space_worst_shape,
-                "allocator_visibility": "python-heap",
+                "allocator_visibility": self.allocator,
             },
             "confidence": self.confidence,
             "drive": {

@@ -26,8 +26,14 @@ from perfmeasure.core.ladder import Budget                     # noqa: E402
 from perfmeasure.core.report import render_human               # noqa: E402
 from perfmeasure.cli import measure_target                     # noqa: E402
 
+import shutil
+
 CORPUS_FILES = sorted((Path(__file__).parent / "corpus").glob("*.py"))
+RUST_CORPUS = Path(__file__).parent / "corpus_rust"
 EXPECTED = json.loads((Path(__file__).parent / "expected.json").read_text())
+if shutil.which("cargo"):
+    EXPECTED.update(json.loads(
+        (Path(__file__).parent / "expected-rust.json").read_text()))
 
 
 def main() -> int:
@@ -48,6 +54,12 @@ def main() -> int:
                 continue
             raise
         reports.extend(rs)
+    if shutil.which("cargo") and not args.only:
+        rs, _ = measure_target(str(RUST_CORPUS), None,
+                               Budget(per_function_s=args.budget))
+        reports.extend(rs)
+    elif not shutil.which("cargo"):
+        print("# cargo not found: Rust corpus skipped", file=sys.stderr)
     print(f"# interpreter: {interp}")
     by_name = {r.fid.rpartition("::")[2]: r for r in reports}
 
@@ -65,7 +77,8 @@ def main() -> int:
             continue
         if exp.get("provenance") == "UNDRIVABLE":
             undrv_total += 1
-            ok = r.provenance == "UNDRIVABLE"
+            ok = r.provenance == "UNDRIVABLE" and (
+                exp.get("detail_contains", "") in (r.provenance_detail or ""))
             undrv_ok += ok
             rows.append((name, r.provenance, r.provenance_detail or "",
                          "ok" if ok else "FAIL"))

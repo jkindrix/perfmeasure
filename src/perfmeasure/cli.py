@@ -37,6 +37,8 @@ def measure_target(file: str, qualname: str | None, budget: Budget,
                    python: str | None = None, target_root: str | None = None):
     """API entry: measure one function (or all drivable in a file).
     Returns (reports, interpreter_note)."""
+    if file.endswith(".rs") or (Path(file) / "Cargo.toml").exists():
+        return _measure_rust(file, qualname, budget)
     file_path = Path(file).resolve()
     root = Path(target_root).resolve() if target_root else _guess_root(file_path)
     plugin = PythonPlugin(python=python)
@@ -58,6 +60,29 @@ def measure_target(file: str, qualname: str | None, budget: Budget,
     finally:
         session.close()
     return reports, f"{interpreter} (via {how})"
+
+
+def _measure_rust(file: str, qualname: str | None, budget: Budget):
+    from perfmeasure.languages.rust.plugin import RustPlugin, find_crate_root
+    plugin = RustPlugin()
+    root = find_crate_root(Path(file))
+    functions = plugin.prepare(Path(file), log=lambda m: print(m, file=sys.stderr))
+    if qualname:
+        functions = [f for f in functions
+                     if f["fid"] == qualname or f["fid"].endswith("::" + qualname)]
+        if not functions:
+            raise RuntimeError(f"function {qualname!r} not found "
+                               f"(fids are crate::module::name)")
+    descs = [_descriptor(f) for f in functions]
+    if any(f["drivable"] for f in functions):
+        session = RunnerSession(plugin.runner_command(root))
+    else:
+        session = RunnerSession(["true"])   # nothing drivable: never spawned
+    try:
+        reports = [measure_function(session, d, budget) for d in descs]
+    finally:
+        session.close()
+    return reports, f"cargo harness for {root}"
 
 
 def _guess_root(file_path: Path) -> Path:
@@ -120,8 +145,11 @@ def main(argv: list[str] | None = None) -> int:
 
 def scan_target(target: str, budget: Budget, python: str | None = None,
                 exclude: list[str] | None = None):
-    from perfmeasure.core.scan import collect_files, scan
+    from perfmeasure.core.scan import _summarize, collect_files, scan
     root = Path(target).resolve()
+    if (root / "Cargo.toml").exists():
+        reports, note = _measure_rust(str(root), None, budget)
+        return reports, note, _summarize(reports, [])
     plugin = PythonPlugin(python=python)
     interpreter, how = plugin.resolve_interpreter(root)
     files = collect_files([str(root)], plugin.extensions, exclude)

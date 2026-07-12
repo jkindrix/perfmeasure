@@ -114,6 +114,21 @@ def fit(points: list[Point], value=lambda p: p.seconds,
     if winner != "O(1)" and _growth(pts) < 4.0 and "O(1)" not in candidates:
         candidates.append("O(1)")
 
+    # tail cross-check: cache-hierarchy transitions bend the middle of the
+    # ladder upward (L1 -> RAM costs ~4x per element in compiled code),
+    # which can promote the full-ladder fit one class. The asymptote lives
+    # in the tail, where the memory regime has stabilized — if the top
+    # half of the ladder fits a lower class, that class is a candidate.
+    if len(pts) >= 2 * MIN_POINTS:
+        tail = pts[len(pts) // 2:]
+        tail_best = min(
+            (( _fit_class(tail, fn, overhead), name)
+             for name, fn in CLASSES
+             if name != "O(2^n)" or max_n <= EXP_MAX_N))[1]
+        if CLASS_ORDER[tail_best] < CLASS_ORDER[winner] \
+                and tail_best not in candidates:
+            candidates.append(tail_best)
+
     margin = None
     others = [(s, name) for s, name in scores if name != winner]
     if others:

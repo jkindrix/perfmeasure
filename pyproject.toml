@@ -3,7 +3,10 @@ name = "perfmeasure"
 version = "0.1.0"
 description = "Empirical complexity measurement: runs functions at growing input sizes and curve-fits time and space to Big-O classes"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "tree-sitter>=0.23",
+    "tree-sitter-rust>=0.24.2",
+]
 
 [project.scripts]
 perfmeasure = "perfmeasure.cli:main"

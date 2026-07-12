@@ -1,0 +1,198 @@
+"""Generate, cache, and build the per-crate measurement harness.
+
+The harness is a standalone crate (own [workspace], path dependency on the
+target) whose main.rs = static template + one generated dispatch arm per
+drivable function. Compile errors from over-eager textual discovery are
+parsed from cargo's JSON messages, the offending arms dropped
+(skip_reason: harness_compile_failed), and the build retried once — the
+pressure valve that lets discovery be honest instead of perfect.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+from importlib import resources
+from pathlib import Path
+
+from perfmeasure.languages.rust.discover import DECL_TYPES
+
+CACHE_ROOT = Path.home() / ".cache" / "perfmeasure" / "rust"
+
+CARGO_TOML = """\
+[package]
+name = "perfmeasure_harness"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+{crate} = {{ path = "{path}" }}
+serde = {{ version = "1", features = ["derive"] }}
+serde_json = "1"
+libc = "0.2"
+
+[profile.release]
+panic = "unwind"
+debug-assertions = false
+overflow-checks = false
+lto = false
+codegen-units = 16
+
+[workspace]
+"""
+
+_GEN = {"list_int": "shaped_i64", "list_str": "gen_list_str",
+        "str_": "gen_string", "dict_si": "gen_map"}
+
+
+def _template() -> str:
+    ref = resources.files("perfmeasure.languages.rust") \
+        / "harness_template" / "main_template.rs"
+    return ref.read_text()
+
+
+def _arm(fn: dict) -> str:
+    fid = fn["fid"]
+    lines = [f'        // ARM {fid}', f'        "{fid}" => {{']
+    own: list[int] = []
+    exprs: list[str] = []
+    for i, p in enumerate(fn["params"]):
+        tag, style, rtype = p["spec_type"], p["style"], p["rust_type"]
+        if tag == "int_mag":
+            lines.append(
+                f'            let a{i}: i64 = '
+                f'if req.inputs[{i}].spec_type == "int_half_of" '
+                f'{{ resolve_half_of(&req.inputs, &sizes, '
+                f'req.inputs[{i}].of_index.unwrap_or(0)) }} '
+                f'else {{ gen_int(&req.inputs[{i}]) }};')
+            if rtype == "i64":
+                exprs.append(f"a{i}")
+            else:
+                lines.append(
+                    f'            let a{i}t: {rtype} = match a{i}.try_into() '
+                    f'{{ Ok(v) => v, Err(_) => return error_json(&req.id, '
+                    f'&req.fid, "unsupported_input", '
+                    f'"int exceeds {rtype}") }};')
+                exprs.append(f"a{i}t")
+        else:
+            lines.append(f"            let a{i}: {DECL_TYPES[tag]} = "
+                         f"{_GEN[tag]}(&req.inputs[{i}]);")
+            if style == "own":
+                exprs.append(f"__p.{len(own)}")
+                own.append(i)
+            elif style == "borrow_slice":
+                exprs.append(f"&a{i}[..]")
+            else:
+                exprs.append(f"&a{i}")
+    if own:
+        prep = "|| (" + ", ".join(f"a{i}.clone()" for i in own) + ",)"
+        head = "|__p|"
+    else:
+        prep = "|| ()"
+        head = "|_|"
+    call = (f"{head} {{ black_box({fid}("
+            + ", ".join(f"black_box({e})" for e in exprs) + ")); }")
+    lines.append(f"            result_json(&req, run_measured(&req, "
+                 f"{str(bool(own)).lower()}, {prep}, {call}))")
+    lines.append("        }")
+    return "\n".join(lines)
+
+
+def generate_main(functions: list[dict], crate: str) -> str:
+    arms = "\n".join(_arm(f) for f in functions if f["drivable"])
+    return _template().replace("// {{DISPATCH_ARMS}}", arms) \
+                      .replace("{{TARGET_CRATE}}", crate)
+
+
+def cache_key(crate_root: Path, functions: list[dict]) -> str:
+    h = hashlib.sha256()
+    for name in ("Cargo.toml", "Cargo.lock"):
+        f = crate_root / name
+        if f.exists():
+            h.update(f.read_bytes())
+    sigs = sorted(
+        (f["fid"], tuple((p["name"], p["rust_type"]) for p in f["params"]))
+        for f in functions if f["drivable"])
+    h.update(repr(sigs).encode())
+    h.update(_template().encode())
+    return h.hexdigest()[:16]
+
+
+def build_harness(crate_root: Path, crate: str, functions: list[dict],
+                  log=print) -> Path:
+    """Returns the built binary path. Mutates `functions`: arms the compiler
+    rejects get drivable=False + skip_reason=harness_compile_failed."""
+    key = cache_key(crate_root, functions)
+    harness = CACHE_ROOT / key
+    binary = harness / "target" / "release" / "perfmeasure_harness"
+    dropped_file = harness / "dropped.json"
+    if binary.exists():
+        # re-apply the compile-retry drop list recorded with this cache entry
+        if dropped_file.exists():
+            _apply_drops(functions, set(json.loads(dropped_file.read_text())))
+        return binary
+    harness.mkdir(parents=True, exist_ok=True)
+    (harness / "src").mkdir(exist_ok=True)
+    (harness / "Cargo.toml").write_text(
+        CARGO_TOML.format(crate=crate, path=crate_root.resolve()))
+
+    all_dropped: set[str] = set()
+    for attempt in range(2):
+        main_rs = generate_main(functions, crate)
+        (harness / "src" / "main.rs").write_text(main_rs)
+        log(f"# building measurement harness (attempt {attempt + 1}) — "
+            "first build per crate is slow, cached after")
+        proc = subprocess.run(
+            ["cargo", "build", "--release", "--message-format=json"],
+            cwd=harness, capture_output=True, text=True, timeout=600)
+        if proc.returncode == 0:
+            dropped_file.write_text(json.dumps(sorted(all_dropped)))
+            return binary
+        bad_fids = _failing_arms(proc.stdout, main_rs)
+        if not bad_fids or attempt == 1:
+            raise RuntimeError(
+                "harness build failed:\n" + proc.stderr[-2000:])
+        all_dropped |= bad_fids
+        _apply_drops(functions, bad_fids)
+        log(f"# dropped {len(bad_fids)} function(s) the compiler rejected: "
+            + ", ".join(sorted(bad_fids)))
+    raise RuntimeError("unreachable")
+
+
+def _apply_drops(functions: list[dict], fids: set[str]) -> None:
+    for f in functions:
+        if f["fid"] in fids and f["drivable"]:
+            f["drivable"] = False
+            f["skip_reason"] = "harness_compile_failed"
+
+
+def _failing_arms(cargo_json: str, main_rs: str) -> set[str]:
+    """Map compiler error spans in main.rs back to // ARM markers."""
+    arm_at_line: list[tuple[int, str]] = []
+    for lineno, line in enumerate(main_rs.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("// ARM "):
+            arm_at_line.append((lineno, stripped[len("// ARM "):]))
+    bad: set[str] = set()
+    for line in cargo_json.splitlines():
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            continue
+        if msg.get("reason") != "compiler-message":
+            continue
+        if msg["message"].get("level") != "error":
+            continue
+        for span in msg["message"].get("spans", []):
+            if not span.get("file_name", "").endswith("main.rs"):
+                continue
+            errline = span.get("line_start", 0)
+            owner = None
+            for start, fid in arm_at_line:
+                if start <= errline:
+                    owner = fid
+                else:
+                    break
+            if owner:
+                bad.add(owner)
+    return bad
