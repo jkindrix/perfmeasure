@@ -33,8 +33,19 @@ Exit code 1 when findings meet the `--fail-on` threshold (`med` by default).
    sites goes to any OpenAI-compatible chat endpoint for an
    `ACTIONABLE / BENIGN / WRONG` verdict. Suppress-only, and only on `BENIGN`
    (measured: models hallucinate `WRONG`), fails open on errors.
-   Benchmark models against the labeled corpus with
-   `python evals/run_eval.py <model>`.
+   Benchmark models against the labeled corpora with
+   `python evals/run_eval.py <model>` (Python) and
+   `--labels evals/labels-rust.json` (Rust).
+
+   **Measured caveat** (qwen3-coder:30b): on the Python corpus adjudication
+   was clean (0/18 real findings lost, 6/7 noise suppressed). On the Rust
+   corpus it suppressed the single true finding — a server-controlled
+   quadratic in protocol decode — with a confident-but-wrong "bounded by the
+   protocol" argument, while filtering only ~half the noise. Treat
+   `--adjudicate` as triage, not truth: review the suppressed list
+   (`--verbose`) before trusting a clean report, and prefer `exclude` globs
+   for tests/benches, which are most of the noise and are filtered
+   deterministically.
 
 ## Configuration
 

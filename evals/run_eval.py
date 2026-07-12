@@ -27,17 +27,22 @@ def load_labeled_findings(labels_path):
     repos = [os.path.expanduser(r) for r in spec["repos"]]
     findings, functions = run(repos)
     labeled = []
+    seen = set()
     for label in spec["labels"]:
+        key = (label["file"], label["line"], label["complexity"])
+        if key in seen:
+            continue  # duplicate label (two findings can share line+complexity)
+        seen.add(key)
         match = [
             f for f in findings
             if f.file.endswith(label["file"])
             and f.line == label["line"]
             and f.complexity == label["complexity"]
         ]
-        if len(match) != 1:
-            print(f"!! label matched {len(match)} findings, expected 1: {label}")
+        if not match:
+            print(f"!! label matched no findings: {label}")
             continue
-        labeled.append((match[0], label["expected"]))
+        labeled.extend((m, label["expected"]) for m in match)
     return labeled, functions
 
 
