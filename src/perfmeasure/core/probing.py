@@ -42,9 +42,11 @@ def candidates_for(param_name: str) -> list[str]:
     return order
 
 
-def probe(session: RunnerSession, desc: FunctionDescriptor
-          ) -> tuple[bool, str | None]:
-    """Resolve unhinted params in place. Returns (any_probed, fail_reason)."""
+def probe(session: RunnerSession, desc: FunctionDescriptor,
+          deadline_left: float | None = None) -> tuple[bool, str | None]:
+    """Resolve unhinted params in place. Returns (any_probed, fail_reason).
+    Probe timeouts are capped by the caller's remaining budget so probing
+    can never blow the function deadline on its own."""
     unhinted = [p for p in desc.params
                 if not p.omitted and p.spec_type is None
                 and p.detail == "missing annotation"]
@@ -55,12 +57,15 @@ def probe(session: RunnerSession, desc: FunctionDescriptor
            and p.detail != "missing annotation" for p in desc.params):
         return False, None
 
+    timeout = PROBE_TIMEOUT_S
+    if deadline_left is not None:
+        timeout = max(0.5, min(PROBE_TIMEOUT_S, deadline_left / 2))
     resolved: dict[str, str] = {p.name: p.spec_type for p in desc.params
                                 if p.spec_type}
     for target in unhinted:
         last_error = "no candidates"
         for tag in candidates_for(target.name):
-            if _accepts(session, desc, resolved, target.name, tag):
+            if _accepts(session, desc, resolved, target.name, tag, timeout):
                 resolved[target.name] = tag
                 target.spec_type = tag
                 target.detail = "probed"
@@ -78,7 +83,8 @@ def probe(session: RunnerSession, desc: FunctionDescriptor
     return True, None
 
 
-def _accepts(session, desc, resolved, target_name, target_tag) -> bool:
+def _accepts(session, desc, resolved, target_name, target_tag,
+             timeout=PROBE_TIMEOUT_S) -> bool:
     for size in PROBE_SIZES:
         specs = []
         for p in desc.params:
@@ -94,8 +100,8 @@ def _accepts(session, desc, resolved, target_name, target_tag) -> bool:
         resp = session.request(
             protocol.call_msg(session.next_id(), desc.fid, specs, warmup=0,
                               max_repeats=1, min_total_ms=0,
-                              budget_ms=2000),
-            timeout=PROBE_TIMEOUT_S)
+                              budget_ms=int(timeout * 400)),
+            timeout=timeout)
         if resp["op"] != "result":
             return False
     return True

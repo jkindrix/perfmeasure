@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 
 N0_COLLECTION = 4
 N0_INT = 2
-N_MAX = 2 ** 22          # collections: memory-bounded
+N_MAX = 2 ** 20          # collections: past ~1M elements, materialization
+                         # and memory passes dominate wall time for no fit gain
 INT_N_MAX = 2 ** 62      # int magnitude costs no memory; log-class
                          # functions need the span (digits, halvings)
 MIN_POINTS_TARGET = 5

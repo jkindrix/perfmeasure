@@ -105,6 +105,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="perfmeasure",
         description="Measure empirical time and space complexity.")
+    from perfmeasure.core.model import TOOL_VERSION
+    parser.add_argument("--version", action="version",
+                        version=f"perfmeasure {TOOL_VERSION}")
     sub = parser.add_subparsers(dest="command", required=True)
     fn = sub.add_parser("fn", help="measure a function (FILE.py::qualname) "
                                    "or all drivable functions in FILE.py")

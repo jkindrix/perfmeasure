@@ -51,7 +51,8 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
     )
     started = time.perf_counter()
 
-    probed, probe_fail = probing.probe(session, desc)
+    probed, probe_fail = probing.probe(
+        session, desc, deadline_left=budget.per_function_s)
     if probe_fail:
         report.provenance = UNDRIVABLE
         report.provenance_detail = probe_fail
@@ -121,14 +122,26 @@ def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
         ladder = ShapeLadder(n0=n0, budget_s=shape_budget, n_max=n_max,
                              per_call_soft_s=budget.per_call_soft_s)
         result = ShapeResult(shape=shape, points=[])
+        size_idx = 0
         while (n := ladder.next_size()) is not None:
             specs = [s.wire() for s in drive.specs(shape, n)]
+            # memory is near-deterministic: tracing every other size halves
+            # the tracing overhead at the expensive top of the ladder while
+            # keeping >= MIN_POINTS memory points on any fittable ladder
+            measure = ["time", "memory"] if size_idx % 2 == 0 else ["time"]
+            size_idx += 1
+            deadline_left = budget.per_function_s - (
+                time.perf_counter() - started)
             msg = protocol.call_msg(
                 session.next_id(), desc.fid, specs,
-                measure=["time", "memory"],
+                measure=measure,
                 budget_ms=int(min(shape_budget, budget.hard_timeout_s) * 1000))
             t0 = time.perf_counter()
-            resp = session.request(msg, timeout=budget.hard_timeout_s)
+            # one monotonic deadline governs requests too: never wait longer
+            # than the remaining budget plus one bounded rescue window
+            resp = session.request(msg, timeout=min(
+                budget.hard_timeout_s,
+                max(1.0, deadline_left + 2 * budget.per_call_soft_s)))
             ladder.charge(time.perf_counter() - t0)
             if resp["op"] == "error":
                 result.failures.append(

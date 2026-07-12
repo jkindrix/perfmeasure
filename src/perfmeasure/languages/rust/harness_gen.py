@@ -9,6 +9,7 @@ pressure valve that lets discovery be honest instead of perfect.
 """
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import subprocess
@@ -143,6 +144,7 @@ def generate_main(functions: list[dict], crate: str) -> str:
 
 
 MAX_CACHE_ENTRIES = 8
+MAX_CACHE_BYTES = 4 * 1024 ** 3    # entries run ~0.5-0.8 GB each
 
 
 def cache_key(crate_root: Path, features: list[str]) -> str:
@@ -157,20 +159,36 @@ def cache_key(crate_root: Path, features: list[str]) -> str:
     return h.hexdigest()[:16]
 
 
+def _dir_bytes(d: Path) -> int:
+    return sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+
+
 def _prune_cache(keep: Path) -> None:
-    """Old-layout dirs and all-but-the-newest v2 entries are deleted.
-    Harness target trees run ~0.5 GB each; unbounded growth was measured
-    at 8.8 GB on one machine."""
+    """Old-layout dirs, all-but-the-newest v2 entries, and anything beyond
+    the total-size cap are deleted (LRU by mtime). Guarded by an exclusive
+    lock so concurrent runs can't race the pruner."""
     import shutil
     root = keep.parent
     if not root.exists():
         return
-    for old in root.parent.glob("[0-9a-f]" * 16):   # pre-v2 layout
-        shutil.rmtree(old, ignore_errors=True)
-    entries = sorted((d for d in root.iterdir() if d.is_dir() and d != keep),
-                     key=lambda d: d.stat().st_mtime, reverse=True)
-    for stale in entries[MAX_CACHE_ENTRIES - 1:]:
-        shutil.rmtree(stale, ignore_errors=True)
+    lock = root / ".lock"
+    with open(lock, "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            for old in root.parent.glob("[0-9a-f]" * 16):   # pre-v2 layout
+                shutil.rmtree(old, ignore_errors=True)
+            entries = sorted(
+                (d for d in root.iterdir() if d.is_dir() and d != keep),
+                key=lambda d: d.stat().st_mtime, reverse=True)
+            total = 0
+            budget = MAX_CACHE_BYTES - _dir_bytes(keep) if keep.exists() else \
+                MAX_CACHE_BYTES
+            for i, d in enumerate(entries):
+                total += _dir_bytes(d)
+                if i >= MAX_CACHE_ENTRIES - 1 or total > budget:
+                    shutil.rmtree(d, ignore_errors=True)
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 def build_harness(crate_root: Path, crate: str, functions: list[dict],

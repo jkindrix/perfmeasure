@@ -10,7 +10,7 @@ Scoring per function:
     worst shape is not the named one (insertion sort must not look worst
     on sorted input).
 Reported: exact-time rate, pass rate (incl. ambiguous-contains-truth),
-space pass rate, UNDRIVABLE precision. Exit 1 on any failure.
+space pass rate, UNDRIVABLE recall. Exit 1 on any failure.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ if shutil.which("cargo"):
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--budget", type=float, default=8.0)
+    parser.add_argument("--budget", type=float, default=4.0)
     parser.add_argument("--only")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()

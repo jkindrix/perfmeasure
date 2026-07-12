@@ -22,6 +22,7 @@ import pathlib
 import platform
 import random
 import string
+import struct
 import sys
 import time
 import traceback
@@ -380,6 +381,21 @@ def _shape_list(base, shape, rng, pool_ratio=16):
     return base
 
 
+# fast bulk generators: randbytes + struct beats per-element randrange by
+# ~20x, and materialization (not measurement) dominated wall time at the
+# ladder's top sizes
+def _rand_i64s(rng, n):
+    return list(struct.unpack(f"<{n}q", rng.randbytes(8 * n)))
+
+
+def _rand_floats(rng, n):
+    return [u / 2**64 for u in struct.unpack(f"<{n}Q", rng.randbytes(8 * n))]
+
+
+_ASCII_TABLE = bytes(97 + (b % 26) for b in range(256))
+_ABCD_TABLE = bytes(97 + (b % 4) for b in range(256))
+
+
 def materialize(spec):
     tag, shape = spec["spec_type"], spec["shape"]
     size, seed = spec["size"], spec["seed"]
@@ -398,17 +414,18 @@ def materialize(spec):
         if shape == "all_equal":
             return [7] * size
         if shape == "dup_heavy":
-            pool = [rng.randrange(-2**31, 2**31) for _ in range(max(1, size // 16))]
-            return [rng.choice(pool) for _ in range(size)]
-        return _shape_list([rng.randrange(-2**31, 2**31) for _ in range(size)],
-                           shape, rng)
+            pool = _rand_i64s(rng, max(1, size // 16))
+            idx = rng.randbytes(size)
+            return [pool[b % len(pool)] for b in idx]
+        return _shape_list(_rand_i64s(rng, size), shape, rng)
     if tag == "list_float":
         if shape == "all_equal":
             return [0.5] * size
         if shape == "dup_heavy":
-            pool = [rng.random() for _ in range(max(1, size // 16))]
-            return [rng.choice(pool) for _ in range(size)]
-        return _shape_list([rng.random() for _ in range(size)], shape, rng)
+            pool = _rand_floats(rng, max(1, size // 16))
+            idx = rng.randbytes(size)
+            return [pool[b % len(pool)] for b in idx]
+        return _shape_list(_rand_floats(rng, size), shape, rng)
     if tag == "list_str":
         if shape == "all_equal":
             return ["xxxxxxxx"] * size
@@ -432,24 +449,24 @@ def materialize(spec):
         if shape == "all_equal":
             return "a" * size
         if shape == "dup_heavy":
-            return "".join(rng.choices("abcd", k=size))
-        s = rng.choices(string.ascii_letters, k=size)
+            return rng.randbytes(size).translate(_ABCD_TABLE).decode("ascii")
+        raw = rng.randbytes(size).translate(_ASCII_TABLE)
         if shape == "sorted":
-            s = sorted(s)
+            raw = bytes(sorted(raw))
         elif shape == "reversed":
-            s = sorted(s, reverse=True)
-        return "".join(s)
+            raw = bytes(sorted(raw, reverse=True))
+        return raw.decode("ascii")
     if tag == "bytes_":
         if shape == "all_equal":
             return b"a" * size
         if shape == "dup_heavy":
-            return bytes(rng.choice(b"abcd") for _ in range(size))
-        b = [rng.randrange(256) for _ in range(size)]
+            return rng.randbytes(size).translate(_ABCD_TABLE)
+        b = rng.randbytes(size)
         if shape == "sorted":
-            b = sorted(b)
+            b = bytes(sorted(b))
         elif shape == "reversed":
-            b = sorted(b, reverse=True)
-        return bytes(b)
+            b = bytes(sorted(b, reverse=True))
+        return b
     if tag == "dict_si":
         if shape == "sorted":
             return {f"k{i:012d}": rng.randrange(2**31) for i in range(size)}
@@ -584,7 +601,7 @@ def do_call(req):
                     batched = True
                 timings.append(first if batch == 1 else _timed_batch(fn, args, batch))
                 total = timings[-1] * batch
-                min_total = req.get("min_total_ms", 30) / 1000.0
+                min_total = req.get("min_total_ms", 10) / 1000.0
                 while (len(timings) < req.get("max_repeats", 15)
                        and total < min_total):
                     if time.perf_counter() - started > budget_s:

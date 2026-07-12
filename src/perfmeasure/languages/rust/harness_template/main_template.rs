@@ -84,7 +84,7 @@ struct CallReq {
     warmup: u32,
     #[serde(default = "fifteen")]
     max_repeats: u32,
-    #[serde(default = "thirty")]
+    #[serde(default = "ten")]
     min_total_ms: u64,
     #[serde(default)]
     measure: Vec<String>,
@@ -93,7 +93,7 @@ struct CallReq {
 }
 fn one() -> u32 { 1 }
 fn fifteen() -> u32 { 15 }
-fn thirty() -> u64 { 30 }
+fn ten() -> u64 { 10 }
 fn ten_thousand() -> u64 { 10_000 }
 
 // ---- materializers ----
@@ -189,6 +189,11 @@ fn gen_map_ii(spec: &Spec) -> std::collections::HashMap<i64, i64> {
     let n = spec.size as usize;
     let mut r = Rng(spec.seed);
     let mut m = std::collections::HashMap::with_capacity(n);
+    let pool: Vec<i64> = if spec.shape == "dup_heavy" {
+        (0..(n / 16).max(1)).map(|_| r.next() as i64 % 64).collect()
+    } else {
+        Vec::new()
+    };
     if spec.shape == "sorted" {
         for i in 0..n {
             m.insert(i as i64, r.next() as i64);
@@ -196,7 +201,12 @@ fn gen_map_ii(spec: &Spec) -> std::collections::HashMap<i64, i64> {
         return m;
     }
     while m.len() < n {
-        m.insert(r.next() as i64, r.next() as i64);
+        let v = if pool.is_empty() {
+            r.next() as i64
+        } else {
+            pool[(r.next() as usize) % pool.len()]
+        };
+        m.insert(r.next() as i64, v);
     }
     m
 }
@@ -205,6 +215,11 @@ fn gen_map_si(spec: &Spec) -> std::collections::HashMap<String, i64> {
     let n = spec.size as usize;
     let mut r = Rng(spec.seed);
     let mut m = std::collections::HashMap::with_capacity(n);
+    let pool: Vec<i64> = if spec.shape == "dup_heavy" {
+        (0..(n / 16).max(1)).map(|_| r.next() as i64 % 64).collect()
+    } else {
+        Vec::new()
+    };
     if spec.shape == "sorted" {
         for i in 0..n {
             m.insert(format!("k{i:012}"), r.next() as i64);
@@ -212,7 +227,12 @@ fn gen_map_si(spec: &Spec) -> std::collections::HashMap<String, i64> {
         return m;
     }
     while m.len() < n {
-        m.insert(format!("k{:015x}", r.next()), r.next() as i64);
+        let v = if pool.is_empty() {
+            r.next() as i64
+        } else {
+            pool[(r.next() as usize) % pool.len()]
+        };
+        m.insert(format!("k{:015x}", r.next()), v);
     }
     m
 }

@@ -80,9 +80,9 @@ The tool is itself evaluated against a ground-truth corpus of
 known-complexity functions (`python evals/harness.py`) spanning Python
 and Rust, O(1) through O(2ⁿ) — typed, unhinted (probing), mutating,
 memoized, cache-bound, panicking, methods, constructed instances, and
-undrivable-by-design. Current run: **70/70 time classes** (43 exact,
+undrivable-by-design. Current run: **70/70 time classes** (46 exact,
 rest ambiguous-containing-truth, mean ambiguity width 1.36), **18/18
-space classes**, **7/7 undrivable recall**. Drivability on real
+space classes**, **7/7 undrivable recall** — full gate in ~200 s. Drivability on real
 projects is tracked separately as a regression metric
 (`python evals/wild.py`).
 
@@ -109,14 +109,17 @@ projects is tracked separately as a regression metric
   `list[int]` doesn't prove the measurement is semantically meaningful;
   probed results are capped at medium confidence and the generator spec
   is in the JSON record for audit.
-- **Methods and instance params are measured against default-constructed
-  state.** Methods on zero-arg-constructible types (`Default`, `new()`,
-  unit structs; Python `Cls()`) and struct/class-typed params are driven
-  with a fixed fresh instance — the constructor is named in the record,
+- **Methods and instance params are measured against constructed
+  state.** Methods and struct/class-typed params are driven with a fixed
+  fresh instance built via `Default`, `new()`, unit structs, Python
+  `Cls()` — or, when a constructor takes arguments, **synthesized args**
+  (small scalars, type-inferring empty containers, `None`, recursion for
+  nested types). The constructor expression is named in the record,
   results are flagged `fixed_instance_inputs` and capped at medium
-  confidence, because cost that depends on instance state is invisible at
-  that fixed point. `&mut self`/consuming receivers and types without a
-  zero-arg constructor stay `UNDRIVABLE`, naming the type.
+  confidence, because cost that depends on instance state is invisible
+  at that fixed point. `&mut self`/consuming receivers and types whose
+  constructors need unsynthesizable values stay `UNDRIVABLE`, naming
+  the type.
 - **Rust v1 reaches public, non-generic, non-`&mut` functions of library
   crates** — every skip carries its reason, and the scan summary counts
   them. Type aliases stay undrivable by design (resolving them is the

@@ -58,7 +58,7 @@ def discover_msg(req_id: str, files: list[str], only: str | None = None) -> dict
 
 
 def call_msg(req_id: str, fid: str, inputs: list[dict], *, warmup: int = 1,
-             max_repeats: int = 15, min_total_ms: int = 30,
+             max_repeats: int = 15, min_total_ms: int = 10,
              measure: list[str] | None = None, budget_ms: int = 10_000) -> dict:
     return {
         "op": "call", "id": req_id, "fid": fid, "inputs": inputs,
