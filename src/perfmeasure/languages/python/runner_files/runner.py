@@ -85,11 +85,20 @@ def _import_file(path: str):
     root, modname = _module_name_for(path)
     if root not in sys.path:
         sys.path.insert(0, root)
+    mod = None
     try:
-        mod = importlib.import_module(modname)
+        candidate = importlib.import_module(modname)
+        # a target file named like a stdlib/installed module (random.py,
+        # pathlib.py) silently wins the sys.modules race — accept the
+        # import only if it actually loaded THIS file
+        loaded = getattr(candidate, "__file__", None)
+        if loaded and os.path.realpath(loaded) == os.path.realpath(path):
+            mod = candidate
     except BaseException:
-        # standalone script fallback; registered so classes defined here
-        # stay importable by module name (instance_ construction)
+        pass
+    if mod is None:
+        # load under a unique private name, registered so classes defined
+        # here stay importable by module name (instance_ construction)
         spec = importlib.util.spec_from_file_location(
             "_perfmeasure_target_" + str(len(_module_cache)), path)
         mod = importlib.util.module_from_spec(spec)

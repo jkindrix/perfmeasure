@@ -87,9 +87,10 @@ def _accepts(session, desc, resolved, target_name, target_tag) -> bool:
             tag = (target_tag if p.name == target_name
                    else resolved.get(p.name) or candidates_for(p.name)[0])
             shape = "magnitude" if tag == "int_mag" else "random"
-            specs.append(GenSpec(tag, shape, size,
-                                 protocol.seed_for(desc.fid, "probe", size)
-                                 ).wire())
+            specs.append(GenSpec(
+                tag, shape, size,
+                protocol.seed_for(f"{desc.fid}#{p.name}", "probe", size)
+            ).wire())
         resp = session.request(
             protocol.call_msg(session.next_id(), desc.fid, specs, warmup=0,
                               max_repeats=1, min_total_ms=0,

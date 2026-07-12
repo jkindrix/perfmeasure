@@ -190,7 +190,7 @@ class FunctionReport:
                 "fixed_params": self.fixed_params,
                 "type_source": self.type_source,
                 "n_semantics": "joint size of driver params",
-                "seed_scheme": "sha256(fid,shape,size)",
+                "seed_scheme": "sha256(fid#param,shape,size)",
             },
             "per_shape": [
                 {

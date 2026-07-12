@@ -79,8 +79,11 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
         for p in active:
             if p in drivers:
                 s = shape if shape in TAG_SHAPES[p.spec_type] else "random"
+                # the param name is part of the seed: co-scaled same-typed
+                # args must be DIFFERENT values, or equality-sensitive and
+                # early-exit code measures a fiction
                 out.append(GenSpec(p.spec_type, s, size,
-                                   seed_for(desc.fid, s, size)))
+                                   seed_for(f"{desc.fid}#{p.name}", s, size)))
             elif p.spec_type in FIXED_TAGS:
                 out.append(GenSpec(p.spec_type, "fixed",
                                    FIXED_TAGS[p.spec_type],

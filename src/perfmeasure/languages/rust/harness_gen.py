@@ -141,37 +141,52 @@ def generate_main(functions: list[dict], crate: str) -> str:
                       .replace("{{TARGET_CRATE}}", crate)
 
 
-def cache_key(crate_root: Path, functions: list[dict],
-              features: list[str]) -> str:
+MAX_CACHE_ENTRIES = 8
+
+
+def cache_key(crate_root: Path, features: list[str]) -> str:
+    """One harness dir per (crate, features). Signatures and target source
+    are deliberately NOT in the key: cargo's own fingerprinting is the
+    staleness oracle — we always run `cargo build`, and an unchanged tree
+    is a ~1s no-op. Hash-and-skip-cargo (the old scheme) silently served
+    binaries built from OLD target code after signature-preserving edits."""
     h = hashlib.sha256()
+    h.update(str(crate_root.resolve()).encode())
     h.update(repr(sorted(features)).encode())
-    for name in ("Cargo.toml", "Cargo.lock"):
-        f = crate_root / name
-        if f.exists():
-            h.update(f.read_bytes())
-    sigs = sorted(
-        (f["fid"], tuple((p["name"], p["rust_type"]) for p in f["params"]))
-        for f in functions if f["drivable"])
-    h.update(repr(sigs).encode())
-    h.update(_template().encode())
     return h.hexdigest()[:16]
+
+
+def _prune_cache(keep: Path) -> None:
+    """Old-layout dirs and all-but-the-newest v2 entries are deleted.
+    Harness target trees run ~0.5 GB each; unbounded growth was measured
+    at 8.8 GB on one machine."""
+    import shutil
+    root = keep.parent
+    if not root.exists():
+        return
+    for old in root.parent.glob("[0-9a-f]" * 16):   # pre-v2 layout
+        shutil.rmtree(old, ignore_errors=True)
+    entries = sorted((d for d in root.iterdir() if d.is_dir() and d != keep),
+                     key=lambda d: d.stat().st_mtime, reverse=True)
+    for stale in entries[MAX_CACHE_ENTRIES - 1:]:
+        shutil.rmtree(stale, ignore_errors=True)
 
 
 def build_harness(crate_root: Path, crate: str, functions: list[dict],
                   features: list[str] | None = None, log=print) -> Path:
     """Returns the built binary path. Mutates `functions`: arms the compiler
-    rejects get drivable=False + skip_reason=harness_compile_failed."""
+    rejects get drivable=False + skip_reason=harness_compile_failed.
+
+    cargo build ALWAYS runs — it is the only correct staleness check for
+    the path-dependency's source. The compile-retry drop list is keyed to
+    the hash of the full generated dispatch, so a discovery change
+    invalidates stale drops automatically."""
     features = features or []
-    key = cache_key(crate_root, functions, features)
-    harness = CACHE_ROOT / key
+    harness = CACHE_ROOT / "v2" / cache_key(crate_root, features)
     binary = harness / "target" / "release" / "perfmeasure_harness"
     dropped_file = harness / "dropped.json"
-    if binary.exists():
-        # re-apply the compile-retry drop list recorded with this cache entry
-        if dropped_file.exists():
-            _apply_drops(functions, set(json.loads(dropped_file.read_text())))
-        return binary
     harness.mkdir(parents=True, exist_ok=True)
+    _prune_cache(harness)
     (harness / "src").mkdir(exist_ok=True)
     feat = ""
     if features:
@@ -180,17 +195,33 @@ def build_harness(crate_root: Path, crate: str, functions: list[dict],
         CARGO_TOML.format(crate=crate, path=crate_root.resolve(),
                           features=feat))
 
+    full_main = generate_main(functions, crate)
+    source_hash = hashlib.sha256(full_main.encode()).hexdigest()
     all_dropped: set[str] = set()
+    if dropped_file.exists():
+        try:
+            record = json.loads(dropped_file.read_text())
+            if record.get("source_hash") == source_hash:
+                all_dropped = set(record.get("dropped", []))
+                _apply_drops(functions, all_dropped)
+        except (ValueError, KeyError):
+            pass
+
+    first_build = not binary.exists()
     for attempt in range(2):
         main_rs = generate_main(functions, crate)
-        (harness / "src" / "main.rs").write_text(main_rs)
-        log(f"# building measurement harness (attempt {attempt + 1}) — "
-            "first build per crate is slow, cached after")
+        main_path = harness / "src" / "main.rs"
+        if not main_path.exists() or main_path.read_text() != main_rs:
+            main_path.write_text(main_rs)
+        if first_build:
+            log("# building measurement harness — first build per crate "
+                "is slow, incremental after")
         proc = subprocess.run(
             ["cargo", "build", "--release", "--message-format=json"],
             cwd=harness, capture_output=True, text=True, timeout=600)
         if proc.returncode == 0:
-            dropped_file.write_text(json.dumps(sorted(all_dropped)))
+            dropped_file.write_text(json.dumps(
+                {"source_hash": source_hash, "dropped": sorted(all_dropped)}))
             return binary
         bad_fids = _failing_arms(proc.stdout, main_rs)
         if not bad_fids or attempt == 1:
