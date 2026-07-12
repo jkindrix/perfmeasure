@@ -14,7 +14,7 @@ from collections import Counter
 
 from perfmeasure import protocol
 from perfmeasure.core.ladder import Budget
-from perfmeasure.core.model import FunctionReport
+from perfmeasure.core.model import ERROR, FunctionReport
 from perfmeasure.core.orchestrator import measure_function
 from perfmeasure.session import RunnerSession
 
@@ -51,6 +51,7 @@ def scan(session: RunnerSession, files: list[str], budget: Budget,
          progress=None) -> tuple[list[FunctionReport], dict]:
     reports: list[FunctionReport] = []
     import_failures: list[str] = []
+    restart_failures = 0
     from perfmeasure.cli import _descriptor  # shared wire->model mapping
     for file in files:
         resp = session.request(
@@ -66,7 +67,23 @@ def scan(session: RunnerSession, files: list[str], budget: Budget,
                 continue
             if progress:
                 progress(desc.fid)
-            reports.append(measure_function(session, desc, budget))
+            try:
+                reports.append(measure_function(session, desc, budget))
+                restart_failures = 0
+            except RuntimeError as exc:
+                # a failed runner respawn costs this function, not the
+                # scan — unless it keeps failing, which means the failure
+                # is systemic (bad interpreter, protocol mismatch) and
+                # every remaining function would fail identically
+                restart_failures += 1
+                reports.append(FunctionReport(
+                    fid=desc.fid, file=desc.file, line=desc.line,
+                    provenance=ERROR,
+                    provenance_detail=f"runner restart failed: {exc}"))
+                if restart_failures >= 3:
+                    raise RuntimeError(
+                        "3 consecutive runner restart failures — aborting "
+                        f"scan as systemic: {exc}") from exc
     summary = _summarize(reports, import_failures)
     return reports, summary
 

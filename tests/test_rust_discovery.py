@@ -1,10 +1,21 @@
 """Rust discovery on the fixture crate: whitelist, reachability, skips.
-Pure tree-sitter — no cargo needed."""
+The scan is pure tree-sitter, but naming goes through `cargo metadata`
+(the authoritative parse), so cargo is required."""
+import shutil
 from pathlib import Path
 
-from perfmeasure.languages.rust.discover import discover_crate
+import pytest
+
+from perfmeasure.languages.rust.discover import crate_name, discover_crate
+from perfmeasure.languages.rust.harness_gen import release_profile
 
 CRATE = Path(__file__).parent / "fixtures" / "tiny_crate"
+
+needs_cargo = pytest.mark.skipif(shutil.which("cargo") is None,
+                                 reason="cargo not installed")
+# crate_name (used by discover_crate for fids) shells out to cargo, so
+# the whole module skips without it rather than erroring
+pytestmark = needs_cargo
 
 
 def _by_name():
@@ -127,3 +138,28 @@ def test_constructible_struct_params():
     assert p["spec_type"] == "instance_"
     assert p["style"] == "borrow_ctor"
     assert p["type_ref"] == "tiny_crate::Opts::new()"
+
+
+@needs_cargo
+def test_crate_name_survives_inline_comment(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "lib.rs").write_text("")
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "demo-crate"  # the old line parser choked here\n'
+        'version = "0.1.0"\nedition = "2021"\n')
+    assert crate_name(tmp_path / "Cargo.toml") == "demo-crate"
+
+
+@needs_cargo
+def test_release_profile_mirrors_target_and_names_divergence(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "lib.rs").write_text("")
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\nedition = "2021"\n\n'
+        '[profile.release]\nlto = true\ncodegen-units = 1\n'
+        'panic = "abort"\n')
+    profile, notes = release_profile(tmp_path)
+    assert profile["lto"] is True
+    assert profile["codegen-units"] == 1
+    assert any("panic" in n for n in notes), \
+        "forcing unwind against panic=abort must be a named divergence"

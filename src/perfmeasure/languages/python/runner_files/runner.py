@@ -580,13 +580,17 @@ def do_call(req):
 
     measure = req.get("measure", ["time"])
     budget_s = req.get("budget_ms", 10_000) / 1000.0
+    warmups = req.get("warmup", 1)
     notes = []
-    mutates = recv_mutates = False
+    # core-supplied verdicts from earlier calls in this run: a warmup-less
+    # call cannot detect mutation itself before its reps reuse the input
+    mutates = bool(req.get("known_mutates"))
+    recv_mutates = bool(req.get("known_recv_mutates"))
     try:
         before = [_fingerprint(a) for a in args]
         recv_before = _receiver_fingerprint(fn)
         warmup_seconds = None
-        for i in range(req.get("warmup", 1)):
+        for i in range(warmups):
             w0 = time.perf_counter_ns()
             fn(*args)
             w1 = time.perf_counter_ns()
@@ -594,13 +598,17 @@ def do_call(req):
                 # the first-ever call is the only honest measurement of a
                 # memoizing function; the core compares it to later reps
                 warmup_seconds = (w1 - w0) / 1e9
-        mutates = any(b is not None and _fingerprint(a) != b
-                      for a, b in zip(args, before))
-        recv_mutates = (recv_before is not None
-                        and _receiver_fingerprint(fn) != recv_before)
+        if warmups:
+            mutates = mutates or any(
+                b is not None and _fingerprint(a) != b
+                for a, b in zip(args, before))
+            recv_mutates = recv_mutates or (
+                recv_before is not None
+                and _receiver_fingerprint(fn) != recv_before)
+        if mutates and warmups:
+            args = _materialize_all(specs)   # warmup dirtied them
         if mutates:
             notes.append("mutates_input")
-            args = _materialize_all(specs)   # warmup dirtied them
         if recv_mutates:
             # the method mutates self: bind a FRESH instance per rep
             # (untimed) so receiver state never accumulates across reps
@@ -617,6 +625,20 @@ def do_call(req):
                 t1 = time.perf_counter_ns()
                 del r
                 first = (t1 - t0) / 1e9
+                if not warmups and not mutates:
+                    # no warmup ran, so detect mutation from the first
+                    # timed call (comparison is outside the timed window)
+                    mutates = any(b is not None and _fingerprint(a) != b
+                                  for a, b in zip(args, before))
+                    if mutates:
+                        notes.append("mutates_input")
+                if not warmups and not recv_mutates:
+                    recv_mutates = (recv_before is not None
+                                    and _receiver_fingerprint(fn)
+                                    != recv_before)
+                    if recv_mutates:
+                        notes.append("mutates_receiver")
+                        fn = _callable_for(fid)
                 batch = 1
                 if first < BATCH_THRESHOLD_S and not mutates \
                         and not recv_mutates:
@@ -646,7 +668,12 @@ def do_call(req):
                 args = _materialize_all(specs)
             if recv_mutates:
                 fn = _callable_for(fid)
+            # GC paused like the time pass: a mid-call cycle collection
+            # shrinks the traced peak nondeterministically, and class
+            # inference needs the deterministic upper envelope. Cyclic-
+            # garbage-heavy code may honestly read one class high.
             gc.collect()
+            gc.disable()
             tracemalloc.start()
             try:
                 base = tracemalloc.get_traced_memory()[0]
@@ -655,6 +682,7 @@ def do_call(req):
                 peak = max(0, tracemalloc.get_traced_memory()[1] - base)
             finally:
                 tracemalloc.stop()
+                gc.enable()
             try:
                 ret_deepsize = _deepsize(r)
             except Exception:
@@ -696,6 +724,7 @@ def main():
         "op": "hello", "protocol": PROTOCOL_VERSION, "language": "python",
         "runtime": f"{platform.python_implementation()} "
                    f"{platform.python_version()} ({sys.executable})",
+        "platform": platform.platform(),
         "capabilities": {"spec_types": SPEC_TYPES, "shapes": SHAPES,
                          "memory": "tracemalloc", "discover": True},
     })

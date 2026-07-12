@@ -11,10 +11,10 @@ import platform
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-TOOL_VERSION = "0.3.0"
+TOOL_VERSION = "0.4.0"
 # bumped whenever generator streams or the measurement schedule change:
 # a JSON record is only input-reproducible against the same generator_rev
-GENERATOR_REV = 2
+GENERATOR_REV = 3   # rev 3: rep tiers, in-window budget clamp, wall gate
 
 # --- complexity classes, ordered by growth ---------------------------------
 
@@ -30,10 +30,6 @@ CLASSES: list[tuple[str, Callable[[float], float]]] = [
 CLASS_ORDER = {name: i for i, (name, _) in enumerate(CLASSES)}
 
 
-def worst_class(names: list[str]) -> str:
-    return max(names, key=CLASS_ORDER.__getitem__)
-
-
 # --- provenance / confidence ------------------------------------------------
 
 MEASURED = "MEASURED"
@@ -45,8 +41,8 @@ ERROR = "ERROR"
 CONFIDENCES = ["low", "med", "high"]
 
 
-def lower_confidence(conf: str, steps: int = 1) -> str:
-    return CONFIDENCES[max(0, CONFIDENCES.index(conf) - steps)]
+def lower_confidence(conf: str) -> str:
+    return CONFIDENCES[max(0, CONFIDENCES.index(conf) - 1)]
 
 
 # --- input specs -------------------------------------------------------------
@@ -109,7 +105,10 @@ class FunctionDescriptor:
     drivable: bool
     skip_reason: str | None = None
     receiver: str | None = None   # methods: constructor ref for the instance
-    receiver_mode: str | None = None  # "shared" (&self) | "fresh" (mut/consuming)
+    receiver_mode: str | None = None  # "shared": one instance for all reps
+                                      # "fresh": rebuilt per rep (the
+                                      # runner decides which its language
+                                      # semantics require)
 
 
 @dataclass
@@ -118,6 +117,10 @@ class DrivePlan:
     fixed_params: dict[str, Any]       # name -> fixed spec description
     shapes: list[str]                  # shapes to sweep
     specs: Callable[[str, int], list[GenSpec]] | None = None
+    has_fixed_ints: bool = False       # only fixed INTS are revalued by
+                                       # the fallback variants; a retry
+                                       # without them replays identical
+                                       # inputs for an identical rejection
 
 
 # --- measurement points and fits ---------------------------------------------
@@ -222,10 +225,13 @@ class FunctionReport:
             "budget": {"wall_used_s": round(self.wall_used_s, 3),
                        "max_n_reached": self.max_n_reached},
             "flags": self.flags,
-            "environment": {**self.environment,
+            "environment": {"platform": platform.platform(),  # fallback —
+                            # the runner's own platform (from hello, in
+                            # self.environment) wins when present, since
+                            # that is where measurement actually ran
+                            **self.environment,
                             "tool_version": TOOL_VERSION,
-                            "generator_rev": GENERATOR_REV,
-                            "platform": platform.platform()},
+                            "generator_rev": GENERATOR_REV},
         }
 
 

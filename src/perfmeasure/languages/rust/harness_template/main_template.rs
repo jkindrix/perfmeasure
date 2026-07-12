@@ -330,11 +330,22 @@ fn run_measured<A, P: FnMut() -> A, F: FnMut(A)>(
         peak_alloc_bytes: None,
         notes: vec![],
     };
-    // warmup: the first-ever call, individually timed (memoizer signal)
+    // warmup: the first-ever call, individually timed (memoizer signal).
+    // For borrow-style arms (prep allocates nothing) the net heap the
+    // warmup call RETAINS is also recorded: interior-mutability caches
+    // (RefCell/OnceCell memoization) populate here, and later reps then
+    // measure the cached path — a timing-only signal misses mild caches
+    let cur0 = CURRENT.load(Ordering::Relaxed);
     let a = prep();
     let w = Instant::now();
     call(a);
     out.warmup_seconds = w.elapsed().as_secs_f64();
+    if !owns {
+        let retained = CURRENT.load(Ordering::Relaxed) as i64 - cur0 as i64;
+        if retained > 4096 {
+            out.notes.push(format!("retained_bytes:{}", retained));
+        }
+    }
     for _ in 1..req.warmup {
         call(prep());
     }
@@ -403,7 +414,7 @@ fn result_json(req: &CallReq, out: Out) -> Value {
         "batched": out.batched,
         "peak_alloc_bytes": out.peak_alloc_bytes,
         "ret_deepsize": null,
-        "mutates": false,
+        "mutates": null,
         "repeats_done": out.wall_seconds.len(),
         "notes": out.notes,
     })
@@ -441,6 +452,9 @@ fn main() {
     let hello = json!({
         "op": "hello", "protocol": 1, "language": "rust",
         "runtime": "rustc-built harness for {{TARGET_CRATE}}",
+        "platform": format!("{}-{}", std::env::consts::OS,
+                            std::env::consts::ARCH),
+        "opt_profile": "{{OPT_PROFILE}}",
         "capabilities": {
             "spec_types": ["list_int", "list_float", "list_str",
                             "list_list_int", "str_", "bytes_", "set_int",

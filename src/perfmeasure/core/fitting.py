@@ -1,19 +1,28 @@
 """Curve fitting: measured (n, value) points -> complexity class.
 
 Model: y(n) ~ a + b*f(n), where `a` is the constant call-overhead floor
-(estimated from the smallest measurements, not fitted) and `b` is a robust
-median scale per candidate class. Scoring happens in LOG space — residuals
-log10(y / (a + b*f(n))) are scale-free, so a ladder spanning five decades
-weighs every regime equally and the overhead floor at small n cannot drag
-the asymptotic fit (the failure mode of plain or relative-weighted least
-squares on this data).
+(estimated from the smallest measurements, not fitted) and `b` is the
+geometric mean of the per-point ratios (y-a)/f(n) — the closed-form
+minimizer of the squared log residuals the score actually uses. Scoring
+happens in LOG space — residuals log10(y / (a + b*f(n))) are scale-free,
+so a ladder spanning five decades weighs every regime equally and the
+overhead floor at small n cannot drag the asymptotic fit (the failure
+mode of plain or relative-weighted least squares on this data).
 
 Winner = lowest log-RMSE, with a simplicity preference on near-ties.
 Candidates (the AMBIGUOUS set) = every class whose log-RMSE is within
 ADEQUACY of the winner's — real measurements bend (caches, allocator
 steps), so a rival that also explains the data must be reported, not
-silently dropped. Guards: constant guard (non-constant needs >= 4x total
-growth), O(2^n) only fitted when max n <= 64.
+silently dropped. The adequacy band is an ABSOLUTE instrument-noise
+band, deliberately not the plan's original dAICc<=2 criterion: with
+equal-parameter models dAICc reduces to an rmse ratio of e^(1/n) —
+~15% on a 7-point ladder — which assumes iid Gaussian residuals that
+wall-time data (systematically cache-bent) does not have. Guards:
+constant guard (non-constant needs >= 4x total growth), O(2^n) only
+fitted when max n <= 64, and a residual-trend check: winner residuals
+drifting UP with n mean a hidden slow factor (the classic n-vs-n·log·n
+miss), so the next class up joins the candidates. Downward drift is
+covered by the tail cross-check instead.
 
 Thresholds are calibrated against evals/harness.py, not vibes.
 """
@@ -34,23 +43,47 @@ ADEQUACY_REL = 1.5           # ... or within 1.5x the winner's rmse, is plausibl
 CONFIDENT_MARGIN = 0.08      # winner..runner-up rmse gap below this -> less sure
 
 
-def _fit_class(pts: list[tuple[float, float]], fn, floor: float) -> float:
-    """Log-RMSE of y ~ floor + b*f(n) with b = robust median scale."""
+def _fit_class(pts: list[tuple[float, float]], fn,
+               floor: float) -> tuple[float, float]:
+    """(log-RMSE, b) of y ~ floor + b*f(n). b = geometric mean of the
+    per-point ratios: the closed-form minimizer of squared log residuals
+    of (y - floor) against b*f(n), so the estimator matches the objective
+    the score reports (a median would minimize absolute log error)."""
     signal = [(y - floor) / fn(n) for n, y in pts if y > 2 * floor and fn(n) > 0]
     if signal:
-        signal.sort()
-        b = signal[len(signal) // 2]
+        b = math.exp(sum(math.log(s) for s in signal) / len(signal))
     else:
         b = 0.0
     err = 0.0
     for n, y in pts:
         model = floor + b * fn(n)
         err += math.log10(max(y, 1e-15) / max(model, 1e-15)) ** 2
-    return math.sqrt(err / len(pts))
+    return math.sqrt(err / len(pts)), b
 
 
 def _growth(pts: list[tuple[float, float]]) -> float:
-    return pts[-1][1] / max(pts[0][1], 1e-15)
+    """Total growth, endpoint-noise-robust: geometric mean of the two
+    smallest-n values against the two largest-n — one high-variance first
+    point must not deflate growth below the constant guard."""
+    if len(pts) < 4:
+        # fewer than two disjoint pairs: plain endpoint ratio (the 2+2
+        # geometric means would share points and read ~1.0 regardless)
+        return pts[-1][1] / max(pts[0][1], 1e-15)
+    lo = math.sqrt(max(pts[0][1], 1e-15) * max(pts[1][1], 1e-15))
+    hi = math.sqrt(max(pts[-1][1], 1e-15) * max(pts[-2][1], 1e-15))
+    return hi / lo
+
+
+def _trend_corr(values: list[float]) -> float:
+    """Pearson correlation of residuals against their (sorted-by-n) index:
+    +1 = monotone upward drift, 0 = no trend."""
+    m = len(values)
+    mx = (m - 1) / 2
+    my = sum(values) / m
+    cov = sum((i - mx) * (v - my) for i, v in enumerate(values))
+    vx = sum((i - mx) ** 2 for i in range(m))
+    vy = sum((v - my) ** 2 for v in values)
+    return cov / math.sqrt(vx * vy) if vx > 0 and vy > 0 else 0.0
 
 
 def monotonicity_violations(values: list[float]) -> int:
@@ -94,10 +127,13 @@ def fit(points: list[Point], value=lambda p: p.seconds,
 
     max_n = pts[-1][0]
     scores: list[tuple[float, str]] = []
+    scales: dict[str, float] = {}
     for name, fn in CLASSES:
         if name == "O(2^n)" and max_n > EXP_MAX_N:
             continue
-        scores.append((_fit_class(pts, fn, overhead), name))
+        score, b = _fit_class(pts, fn, overhead)
+        scores.append((score, name))
+        scales[name] = b
     scores.sort()
     best_score = scores[0][0]
 
@@ -122,12 +158,36 @@ def fit(points: list[Point], value=lambda p: p.seconds,
     if len(pts) >= 2 * MIN_POINTS:
         tail = pts[len(pts) // 2:]
         tail_best = min(
-            (( _fit_class(tail, fn, overhead), name)
+            ((_fit_class(tail, fn, overhead)[0], name)
              for name, fn in CLASSES
              if name != "O(2^n)" or max_n <= EXP_MAX_N))[1]
         if CLASS_ORDER[tail_best] < CLASS_ORDER[winner] \
                 and tail_best not in candidates:
             candidates.append(tail_best)
+
+    # residual-trend check: the winner's residuals climbing steadily with
+    # n mean the model underfits the top of the ladder — a hidden slow
+    # factor (n vs n log n hides exactly here; FSE'07 reads this off the
+    # residual plot). The next class up joins the candidates. Downward
+    # drift is the tail cross-check's job, so only upward widens here.
+    # Only a CLEAN-looking fit (singleton candidate set) is widened: when
+    # rivals are already reported the drift is already visible, and
+    # stacking a third class turns short-ladder noise into flaky width-3
+    # sets (measured at ~4% of 6-7 point ladders).
+    fn_w = dict(CLASSES)[winner]
+    b_w = scales[winner]
+    res = [math.log10(max(y, 1e-15) / max(overhead + b_w * fn_w(n), 1e-15))
+           for n, y in pts]
+    if (len(candidates) == 1
+            and (max(res) - min(res)) > 2 * TIE_BAND
+            and _trend_corr(res) >= 0.85):
+        order = sorted(CLASS_ORDER, key=CLASS_ORDER.__getitem__)
+        for cand in order[order.index(winner) + 1:]:
+            if cand == "O(2^n)" and max_n > EXP_MAX_N:
+                continue
+            if cand not in candidates:
+                candidates.append(cand)
+            break
 
     margin = None
     others = [(s, name) for s, name in scores if name != winner]

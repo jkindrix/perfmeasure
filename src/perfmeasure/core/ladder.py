@@ -2,8 +2,14 @@
 
 Doubling schedule with adaptive stopping. Stop conditions per shape:
   - per-call soft cap exceeded by the last measured call
-  - projected-cost gate: never START a call whose 4x extrapolation
-    (quadratic-growth assumption) would bust the remaining shape budget
+  - projected-cost gate: never START a call whose projected FULL wall
+    cost — 4x the last call's charged wall (reps + warmup + memory pass
+    + protocol overhead), quadratic-growth assumption — would bust the
+    remaining shape budget. Wall, not per-call time: a call's budget
+    cost includes everything the orchestrator charges for it. Traced
+    sizes carry tracemalloc overhead in that wall, so the gate is
+    deliberately conservative for alloc-heavy functions (stops one size
+    early into backfill rather than busting the budget).
   - size ceiling reached
   - shape wall budget exhausted
 
@@ -36,6 +42,12 @@ class Budget:
     per_call_soft_s: float = 1.0
     hard_timeout_s: float = 10.0
     rescue_s: float = 4.0
+    # rep policy per call. Defaults are the lean tier (scan mode + the
+    # eval gate); `perfmeasure fn` passes the generous tier explicitly —
+    # a deep look at one function can afford real statistics
+    warmup: int = 1
+    max_repeats: int = 15
+    min_total_ms: int = 10
 
 
 @dataclass
@@ -50,6 +62,7 @@ class ShapeLadder:
     stop_reason: str = ""
     _backfilling: bool = False
     _failed_n: int | None = None
+    _last_wall: float = 0.0
 
     def record(self, n: int, seconds: float, wall_cost: float) -> None:
         self.sizes_done.append(n)
@@ -58,6 +71,7 @@ class ShapeLadder:
 
     def charge(self, wall_cost: float) -> None:
         self.spent_s += wall_cost
+        self._last_wall = wall_cost
 
     def force_backfill(self, failed_n: int, reason: str,
                        grace_s: float | None = None) -> bool:
@@ -90,7 +104,7 @@ class ShapeLadder:
                 self.stop_reason = "per_call_cap"
             elif last * 2 > self.n_max:
                 self.stop_reason = "n_max"
-            elif last_t * 4 > self.budget_s - self.spent_s:
+            elif self._last_wall * 4 > self.budget_s - self.spent_s:
                 self.stop_reason = "projected_cost"
             else:
                 return last * 2

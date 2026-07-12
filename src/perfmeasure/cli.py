@@ -136,6 +136,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     budget = Budget(per_function_s=args.budget, rescue_s=args.rescue)
+    if args.command == "fn":
+        # single-function mode: budget affords real statistics per size
+        budget = Budget(per_function_s=args.budget, rescue_s=args.rescue,
+                        warmup=2, max_repeats=30, min_total_ms=50)
     features = args.features.split(",") if args.features else None
     try:
         if args.command == "fn":

@@ -4,15 +4,20 @@ The harness is a standalone crate (own [workspace], path dependency on the
 target) whose main.rs = static template + one generated dispatch arm per
 drivable function. Compile errors from over-eager textual discovery are
 parsed from cargo's JSON messages, the offending arms dropped
-(skip_reason: harness_compile_failed), and the build retried once — the
-pressure valve that lets discovery be honest instead of perfect.
+(skip_reason: harness_compile_failed), and the build retried to a fixed
+point (dropping one bad arm can unmask another; capped at
+MAX_BUILD_ATTEMPTS) — the pressure valve that lets discovery be honest
+instead of perfect.
 """
 from __future__ import annotations
 
 import fcntl
 import hashlib
 import json
+import os
+import shutil
 import subprocess
+import time
 from importlib import resources
 from pathlib import Path
 
@@ -33,14 +38,75 @@ serde_json = "1"
 libc = "0.2"
 
 [profile.release]
-panic = "unwind"
-debug-assertions = false
-overflow-checks = false
-lto = false
-codegen-units = 16
-
+{profile}
 [workspace]
 """
+
+# cargo's own release defaults — the starting point the target's explicit
+# [profile.release] keys override. The harness is the workspace root, so
+# ITS profile governs the target's compilation: without mirroring, a
+# target built with lto = true in real life would be measured un-LTO'd,
+# silently. panic is the one key never mirrored: catch_unwind (crash-is-
+# data) requires unwind, so a panic = "abort" target is a recorded
+# divergence instead.
+_RELEASE_DEFAULTS: dict[str, object] = {
+    "opt-level": 3, "lto": False, "codegen-units": 16,
+    "debug-assertions": False, "overflow-checks": False,
+}
+_MIRRORED_KEYS = tuple(_RELEASE_DEFAULTS)
+
+
+def _toml_value(v: object) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return str(v)
+    return f'"{v}"'
+
+
+def release_profile(crate_root: Path) -> tuple[dict[str, object], list[str]]:
+    """The target workspace root's effective [profile.release] over cargo
+    defaults, plus divergence notes for anything the harness cannot
+    honor. Requires tomllib (Python >= 3.11); without it the defaults are
+    used and the divergence is recorded, never silent."""
+    profile = dict(_RELEASE_DEFAULTS)
+    notes: list[str] = []
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        notes.append("profile not mirrored (tomllib requires Python >= 3.11)")
+        return profile, notes
+    from perfmeasure.languages.rust.discover import cargo_metadata
+    try:
+        root_manifest = Path(
+            cargo_metadata(crate_root / "Cargo.toml")["workspace_root"]
+        ) / "Cargo.toml"
+    except (RuntimeError, OSError, KeyError) as exc:
+        notes.append(f"profile not mirrored (cargo metadata failed: {exc})")
+        return profile, notes
+    try:
+        declared = tomllib.loads(root_manifest.read_text()) \
+            .get("profile", {}).get("release", {})
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        notes.append(f"profile not mirrored ({exc})")
+        return profile, notes
+    for key, value in declared.items():
+        if key in _MIRRORED_KEYS:
+            profile[key] = value
+        elif key == "panic":
+            if value != "unwind":
+                notes.append(
+                    f'target sets panic = "{value}"; harness forces unwind '
+                    "(catch_unwind is how panics become data)")
+        else:
+            notes.append(f"profile key {key!r} not mirrored")
+    return profile, notes
+
+
+def _profile_section(profile: dict[str, object]) -> str:
+    lines = ['panic = "unwind"']
+    lines += [f"{k} = {_toml_value(v)}" for k, v in profile.items()]
+    return "\n".join(lines) + "\n"
 
 _GEN = {"list_int": "shaped_i64", "list_str": "gen_list_str",
         "str_": "gen_string", "bytes_": "gen_bytes",
@@ -148,14 +214,17 @@ def _arm(fn: dict) -> str:
     return "\n".join(lines)
 
 
-def generate_main(functions: list[dict], crate: str) -> str:
+def generate_main(functions: list[dict], crate: str,
+                  opt_profile_json: str = "null") -> str:
     arms = "\n".join(_arm(f) for f in functions if f["drivable"])
     return _template().replace("// {{DISPATCH_ARMS}}", arms) \
-                      .replace("{{TARGET_CRATE}}", crate)
+                      .replace("{{TARGET_CRATE}}", crate) \
+                      .replace("\"{{OPT_PROFILE}}\"", opt_profile_json)
 
 
 MAX_CACHE_ENTRIES = 8
 MAX_CACHE_BYTES = 4 * 1024 ** 3    # entries run ~0.5-0.8 GB each
+MAX_BUILD_ATTEMPTS = 4             # drop-arms-and-rebuild until clean
 
 
 def cache_key(crate_root: Path, features: list[str]) -> str:
@@ -178,7 +247,6 @@ def _prune_cache(keep: Path) -> None:
     """Old-layout dirs, all-but-the-newest v2 entries, and anything beyond
     the total-size cap are deleted (LRU by mtime). Guarded by an exclusive
     lock so concurrent runs can't race the pruner."""
-    import shutil
     root = keep.parent
     if not root.exists():
         return
@@ -188,7 +256,6 @@ def _prune_cache(keep: Path) -> None:
         try:
             for old in root.parent.glob("[0-9a-f]" * 16):   # pre-v2 layout
                 shutil.rmtree(old, ignore_errors=True)
-            import time as _time
             entries = sorted(
                 (d for d in root.iterdir() if d.is_dir() and d != keep),
                 key=lambda d: d.stat().st_mtime, reverse=True)
@@ -200,7 +267,7 @@ def _prune_cache(keep: Path) -> None:
                 # entries touched in the last hour may belong to a live
                 # concurrent run — never prune those (the flock only
                 # serializes pruners, not builders/runners)
-                if _time.time() - d.stat().st_mtime < 3600:
+                if time.time() - d.stat().st_mtime < 3600:
                     continue
                 if i >= MAX_CACHE_ENTRIES - 1 or total > budget:
                     shutil.rmtree(d, ignore_errors=True)
@@ -227,11 +294,23 @@ def build_harness(crate_root: Path, crate: str, functions: list[dict],
     feat = ""
     if features:
         feat = ", features = [" + ", ".join(f'"{f}"' for f in features) + "]"
+    profile, profile_notes = release_profile(crate_root)
     (harness / "Cargo.toml").write_text(
         CARGO_TOML.format(crate=crate, path=crate_root.resolve(),
-                          features=feat))
+                          features=feat,
+                          profile=_profile_section(profile)))
+    opt_profile = {k.replace("-", "_"): v for k, v in profile.items()}
+    opt_profile["panic"] = "unwind"
+    if profile_notes:
+        # printable ASCII only: json.dumps escapes like \uXXXX are valid
+        # JSON but invalid Rust string-literal escapes, and this JSON is
+        # spliced into main.rs source (a non-ASCII manifest path in a
+        # divergence note must not break the whole harness build)
+        opt_profile["divergences"] = [
+            "".join(c if " " <= c <= "~" else "?" for c in note)
+            for note in profile_notes]
 
-    full_main = generate_main(functions, crate)
+    full_main = generate_main(functions, crate, json.dumps(opt_profile))
     source_hash = hashlib.sha256(full_main.encode()).hexdigest()
     all_dropped: set[str] = set()
     if dropped_file.exists():
@@ -244,8 +323,8 @@ def build_harness(crate_root: Path, crate: str, functions: list[dict],
             pass
 
     first_build = not binary.exists()
-    for attempt in range(2):
-        main_rs = generate_main(functions, crate)
+    for attempt in range(MAX_BUILD_ATTEMPTS):
+        main_rs = generate_main(functions, crate, json.dumps(opt_profile))
         main_path = harness / "src" / "main.rs"
         if not main_path.exists() or main_path.read_text() != main_rs:
             main_path.write_text(main_rs)
@@ -258,11 +337,10 @@ def build_harness(crate_root: Path, crate: str, functions: list[dict],
         if proc.returncode == 0:
             dropped_file.write_text(json.dumps(
                 {"source_hash": source_hash, "dropped": sorted(all_dropped)}))
-            import os
             os.utime(harness)   # true last-use, so pruning approximates LRU
             return binary
         bad_fids = _failing_arms(proc.stdout, main_rs)
-        if not bad_fids or attempt == 1:
+        if not bad_fids or attempt == MAX_BUILD_ATTEMPTS - 1:
             raise RuntimeError(
                 "harness build failed:\n" + proc.stderr[-2000:])
         all_dropped |= bad_fids

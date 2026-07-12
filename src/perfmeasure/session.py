@@ -4,13 +4,18 @@ crash recovery, per-function blacklist.
 Crash-is-data policy: a hung call gets SIGKILL and comes back as a
 synthesized {"kind": "timeout_hard"} error; a dead runner comes back as
 {"kind": "runner_crash"}. The session restarts the runner lazily and
-blacklists a fid after CRASH_LIMIT crashes attributed to it.
+blacklists a fid after CRASH_LIMIT crashes attributed to it. Timeouts
+never blacklist: a hang is a steepness signal about the measurement
+(data), while a crash is a defect in the runner or target — only the
+latter justifies refusing further calls. Timeouts are tallied separately
+for diagnostics.
 """
 from __future__ import annotations
 
 import queue
 import subprocess
 import threading
+import time
 from collections import deque
 
 from perfmeasure import protocol
@@ -29,6 +34,7 @@ class RunnerSession:
         self._out: queue.Queue | None = None
         self._stderr_tail: deque[str] = deque(maxlen=STDERR_TAIL_LINES)
         self._crashes: dict[str, int] = {}
+        self._timeouts: dict[str, int] = {}
         self._req = 0
 
     # -- lifecycle ------------------------------------------------------------
@@ -64,16 +70,27 @@ class RunnerSession:
             out.put(None)  # EOF sentinel, ignored after restart
 
     def _read(self, timeout: float) -> dict | None:
-        try:
-            line = self._out.get(timeout=timeout)
-        except queue.Empty:
-            return None
-        if line is None:
-            return None
-        try:
-            return protocol.parse_msg(line)
-        except ValueError:
-            return None
+        """One protocol message, or None on hang/EOF. Non-protocol lines
+        (a third-party runner letting stray output reach fd 1) are logged
+        and skipped rather than read as a hang — SIGKILLing a healthy
+        runner over one stray print would be a fragile contract. The
+        timeout bounds the TOTAL wait, stray lines included."""
+        end = time.monotonic() + timeout
+        while True:
+            remaining = end - time.monotonic()
+            if remaining <= 0:
+                return None
+            try:
+                line = self._out.get(timeout=remaining)
+            except queue.Empty:
+                return None
+            if line is None:
+                return None
+            try:
+                return protocol.parse_msg(line)
+            except ValueError:
+                self._stderr_tail.append(
+                    f"[non-protocol stdout] {line.rstrip()[:200]}")
 
     def _alive(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
@@ -119,11 +136,14 @@ class RunnerSession:
             if resp is None:
                 if self._alive():  # genuine hang
                     self._kill()
+                    n = 1
                     if fid:
-                        self._crashes[fid] = self._crashes.get(fid, 0) + 1
+                        n = self._timeouts[fid] = \
+                            self._timeouts.get(fid, 0) + 1
                     return protocol.error_result(
                         msg.get("id", "?"), fid, "timeout_hard",
-                        f"no response within {timeout:.0f}s; runner killed",
+                        f"no response within {timeout:.0f}s; runner killed "
+                        f"(timeout #{n} for this function)",
                         self._crash_detail())
                 return self._crashed(msg)
             if resp.get("id") == msg.get("id"):

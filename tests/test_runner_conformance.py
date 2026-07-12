@@ -82,3 +82,27 @@ def test_unknown_function_is_not_found(session):
         timeout=30)
     assert resp["op"] == "error"
     assert resp["kind"] == "not_found"
+
+
+def test_warmup_zero_still_detects_mutation(session):
+    """Lean calls (warmup=0) must not silently reuse dirtied inputs:
+    mutation is detected from the first timed call instead."""
+    fns = _discover(session)
+    resp = session.request(protocol.call_msg(
+        session.next_id(), fns["sorts_in_place"]["fid"],
+        [{"spec_type": "list_int", "shape": "random", "size": 512, "seed": 3}],
+        warmup=0, max_repeats=3), timeout=30)
+    assert resp["op"] == "result"
+    assert resp["mutates"] is True
+    assert resp["batched"] is False
+
+
+def test_known_mutates_hint_is_honored(session):
+    fns = _discover(session)
+    resp = session.request(protocol.call_msg(
+        session.next_id(), fns["sorts_in_place"]["fid"],
+        [{"spec_type": "list_int", "shape": "random", "size": 512, "seed": 3}],
+        warmup=0, max_repeats=2, known_mutates=True), timeout=30)
+    assert resp["op"] == "result"
+    assert resp["mutates"] is True
+    assert resp["batched"] is False

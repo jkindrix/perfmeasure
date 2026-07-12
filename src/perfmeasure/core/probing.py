@@ -64,7 +64,12 @@ def probe(session: RunnerSession, desc: FunctionDescriptor,
     for target in unhinted:
         last_error = "no candidates"
         for tag in candidates_for(target.name):
-            if _accepts(session, desc, resolved, target.name, tag, deadline):
+            verdict = _accepts(session, desc, resolved, target.name, tag,
+                               deadline)
+            if verdict == "deadline":
+                return False, ("deadline: per-function budget exhausted "
+                               "during type probing")
+            if verdict:
                 resolved[target.name] = tag
                 target.spec_type = tag
                 target.detail = "probed"
@@ -83,7 +88,10 @@ def probe(session: RunnerSession, desc: FunctionDescriptor,
 
 
 def _accepts(session, desc, resolved, target_name, target_tag,
-             deadline=None) -> bool:
+             deadline=None) -> bool | str:
+    """True: candidate accepted. False: rejected. "deadline": the probe
+    was killed by a deadline-clamped timeout — a scheduling fact that says
+    nothing about the candidate, so probing must stop, not blame it."""
     for size in PROBE_SIZES:
         timeout = PROBE_TIMEOUT_S
         if deadline is not None:
@@ -106,5 +114,8 @@ def _accepts(session, desc, resolved, target_name, target_tag,
                               budget_ms=int(timeout * 400)),
             timeout=timeout)
         if resp["op"] != "result":
+            if (resp.get("kind") == "timeout_hard"
+                    and timeout < PROBE_TIMEOUT_S):
+                return "deadline"
             return False
     return True

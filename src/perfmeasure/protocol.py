@@ -20,7 +20,11 @@ Ops:
 
 Error kinds: exception | unsupported_input | not_found | import_failed
              | internal  (timeout_hard and runner_crash are synthesized
-             core-side by session.py, never sent by a runner).
+             core-side by session.py, never sent by a runner;
+             deadline_exhausted is an orchestrator-side relabel of a
+             timeout_hard whose request window was clamped by the
+             per-function deadline — the schedule killed the call, not
+             the function).
 """
 from __future__ import annotations
 
@@ -32,7 +36,7 @@ PROTOCOL_VERSION = 1
 
 ERROR_KINDS = {
     "exception", "unsupported_input", "not_found", "import_failed",
-    "internal", "timeout_hard", "runner_crash",
+    "internal", "timeout_hard", "runner_crash", "deadline_exhausted",
 }
 
 
@@ -59,12 +63,19 @@ def discover_msg(req_id: str, files: list[str], only: str | None = None) -> dict
 
 def call_msg(req_id: str, fid: str, inputs: list[dict], *, warmup: int = 1,
              max_repeats: int = 15, min_total_ms: int = 10,
-             measure: list[str] | None = None, budget_ms: int = 10_000) -> dict:
+             measure: list[str] | None = None, budget_ms: int = 10_000,
+             known_mutates: bool = False,
+             known_recv_mutates: bool = False) -> dict:
+    """known_mutates / known_recv_mutates: verdicts from earlier calls in
+    the same run. Lean calls (warmup=0) have no warmup to detect mutation
+    from — without the hint their later reps would run on dirtied inputs."""
     return {
         "op": "call", "id": req_id, "fid": fid, "inputs": inputs,
         "warmup": warmup, "max_repeats": max_repeats,
         "min_total_ms": min_total_ms,
         "measure": measure or ["time"], "budget_ms": budget_ms,
+        "known_mutates": known_mutates,
+        "known_recv_mutates": known_recv_mutates,
     }
 
 

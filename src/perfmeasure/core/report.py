@@ -11,7 +11,11 @@ from perfmeasure.core.model import (
 
 def _fname(report: FunctionReport) -> str:
     path, _, qual = report.fid.partition("::")
-    return f"{os.path.relpath(path) if path else '?'}::{qual}"
+    if not path:
+        return f"?::{qual}"
+    if os.sep in path or path.endswith(".py"):
+        return f"{os.path.relpath(path)}::{qual}"
+    return report.fid   # crate::module::fn — not a filesystem path
 
 
 def render_human(reports: list[FunctionReport], verbose: bool = False) -> str:

@@ -22,3 +22,7 @@ def slow_sleeper(xs: list[int]) -> int:
     import time
     time.sleep(0.3)
     return len(xs)
+
+
+def sorts_in_place(xs: list[int]) -> None:
+    xs.sort()

@@ -9,7 +9,9 @@ the cases textual matching gets wrong.
 """
 from __future__ import annotations
 
+import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -87,17 +89,42 @@ def _normalize(type_text: str) -> str:
     return t
 
 
+_METADATA_CACHE: dict[str, dict] = {}
+
+
+def cargo_metadata(cargo_toml: Path) -> dict:
+    """`cargo metadata` for the workspace containing this manifest — the
+    authoritative source for package naming and the workspace root.
+    Cached per manifest path (one subprocess per crate per run)."""
+    key = str(cargo_toml.resolve())
+    if key not in _METADATA_CACHE:
+        proc = subprocess.run(
+            ["cargo", "metadata", "--no-deps", "--format-version", "1",
+             "--manifest-path", key],
+            capture_output=True, text=True, timeout=120)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"cargo metadata failed for {cargo_toml}:\n"
+                + proc.stderr[-800:])
+        try:
+            _METADATA_CACHE[key] = json.loads(proc.stdout)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"cargo metadata returned non-JSON for {cargo_toml}: "
+                f"{exc}") from exc
+    return _METADATA_CACHE[key]
+
+
 def crate_name(cargo_toml: Path) -> str:
-    """Raw [package].name (dashes intact — Cargo.toml wants this form;
-    use .replace('-', '_') for the code identifier)."""
-    text = cargo_toml.read_text()
-    in_package = False
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("["):
-            in_package = line == "[package]"
-        elif in_package and line.startswith("name"):
-            return line.split("=", 1)[1].strip().strip('"')
+    """Raw [package].name via cargo metadata (dashes intact — Cargo.toml
+    wants this form; use .replace('-', '_') for the code identifier).
+    Hand-parsing the TOML is a trap: inline comments and workspace
+    inheritance (`name.workspace = true`) both defeat it."""
+    meta = cargo_metadata(cargo_toml)
+    resolved = str(cargo_toml.resolve())
+    for pkg in meta.get("packages", []):
+        if pkg.get("manifest_path") == resolved:
+            return pkg["name"]
     raise RuntimeError(f"no [package].name in {cargo_toml}")
 
 

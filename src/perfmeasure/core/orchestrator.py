@@ -29,7 +29,8 @@ from perfmeasure.session import RunnerSession
 REP_SPREAD_LIMIT = 5.0
 MEMO_RATIO = 10.0
 MEMO_ABS_FLOOR_S = 50e-6
-SPAN_CONFIDENT_DOUBLINGS = 4
+SPAN_CONFIDENT_DOUBLINGS = 5
+ADJACENT_SPAN_DOUBLINGS = 6   # n vs n log n needs extra span for `high`
 DEEPSIZE_GROWTH = 8.0
 
 
@@ -42,6 +43,8 @@ class _Run:
     shapes_skipped: int = 0          # deadline hit before these shapes ran
     recv_mutates: bool = False       # method mutated self; fresh bind per rep
     rejected: str | None = None      # exception message at the first size
+    retained_state: bool = False     # warmup call retained heap (Rust
+                                     # interior-mutability cache signal)
 
 
 def measure_function(session: RunnerSession, desc: FunctionDescriptor,
@@ -56,7 +59,12 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
 
     probed, probe_fail = probing.probe(session, desc, deadline=deadline)
     if probe_fail:
-        report.provenance = UNDRIVABLE
+        if probe_fail.startswith("deadline:"):
+            # the budget died mid-probe; we learned nothing about the
+            # function itself, so UNDRIVABLE would be a lie
+            report.provenance = TIMEOUT
+        else:
+            report.provenance = UNDRIVABLE
         report.provenance_detail = probe_fail
         return report
 
@@ -68,7 +76,7 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
             report.provenance_detail = reason
             return report
         run = _run_ladders(session, desc, drive, budget, deadline, hard_wall)
-        if run.rejected is None or not drive.fixed_params:
+        if run.rejected is None or not drive.has_fixed_ints:
             break
 
     report.driver_params = drive.driver_params
@@ -91,12 +99,25 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
         report.flags["deadline_shapes_skipped"] = run.shapes_skipped
     # hello is only populated after the first request; refresh now
     report.environment = {"runtime": session.hello.get("runtime", "?")}
+    if session.hello.get("platform"):
+        # the platform where measurement RAN (the runner's), which is not
+        # necessarily the orchestrator's for remote/containerized runners
+        report.environment["platform"] = session.hello["platform"]
+    if session.hello.get("opt_profile"):
+        # the opt profile the harness was really built with (mirrored
+        # from the target's workspace, divergences named) — measured
+        # numbers are only comparable to builds with the same profile
+        report.environment["opt_profile"] = session.hello["opt_profile"]
     report.allocator = session.hello.get(
         "capabilities", {}).get("memory") or "unknown"
     if run.mutates:
         report.flags["mutates_input"] = True
     if run.recv_mutates or desc.receiver_mode == "fresh":
         report.flags["mutates_receiver"] = True
+    if run.retained_state:
+        # the first call left heap behind (interner, memo table, lazy
+        # static): later reps may have measured a cached path
+        report.flags["state_retained_after_first_call"] = True
 
     if run.rejected is not None:
         report.provenance = UNDRIVABLE
@@ -105,6 +126,14 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
 
     _fit_shapes(run, report)
     _aggregate(report, run, probed)
+    # black_box is best-effort by documented contract: fully optimized-out
+    # compiled code reads as a flat sub-nanosecond O(1) — detectable, so
+    # detect it instead of reporting the deletion as a measurement
+    if (report.time_cls == "O(1)"
+            and session.hello.get("language") == "rust"):
+        secs = [p.seconds for s in report.per_shape for p in s.points]
+        if secs and min(secs) < 1e-9:
+            report.flags["possible_optimizer_elision"] = True
     return report
 
 
@@ -148,38 +177,58 @@ def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
             # unmeasured rather than costing the time fit
             if ladder._backfilling:
                 measure = ["time"]
-                lean = {"warmup": 0, "max_repeats": 2, "min_total_ms": 0}
+                # no warmup means no runner-side mutation detection: pass
+                # down what this run already learned, or rep 2 of a
+                # mutating function would measure a dirtied input
+                lean = {"warmup": 0, "max_repeats": 2, "min_total_ms": 0,
+                        "known_mutates": run.mutates,
+                        "known_recv_mutates": run.recv_mutates}
             else:
                 measure = (["time", "memory"] if npts < 5 or npts % 2 == 1
                            else ["time"])
-                lean = {}
-            msg = protocol.call_msg(
-                session.next_id(), desc.fid, specs,
-                measure=measure, **lean,
-                budget_ms=int(min(shape_budget, budget.hard_timeout_s) * 1000))
-            t0 = time.perf_counter()
+                lean = {"warmup": budget.warmup,
+                        "max_repeats": budget.max_repeats,
+                        "min_total_ms": budget.min_total_ms}
             # budget is a promise; rescue_s is the only sanctioned overrun.
             # NORMAL calls may wait only until the deadline — the rescue
             # window is reserved for backfill, so killing a hang can never
             # consume the very window that salvages the fit afterwards
             wall = hard_wall if ladder._backfilling else deadline
-            resp = session.request(msg, timeout=min(
-                budget.hard_timeout_s,
-                max(0.25, wall - time.perf_counter())))
+            req_timeout = min(budget.hard_timeout_s,
+                              max(0.25, wall - time.perf_counter()))
+            # the runner's internal rep budget stays inside the request
+            # window (0.8: headroom to serialize + flush) so a deadline-
+            # squeezed call returns partial reps instead of dying mid-rep
+            msg = protocol.call_msg(
+                session.next_id(), desc.fid, specs,
+                measure=measure, **lean,
+                budget_ms=int(min(shape_budget, budget.hard_timeout_s,
+                                  req_timeout * 0.8) * 1000))
+            t0 = time.perf_counter()
+            resp = session.request(msg, timeout=req_timeout)
             ladder.charge(time.perf_counter() - t0)
             if resp["op"] == "error":
+                kind = resp["kind"]
+                if kind == "timeout_hard" and req_timeout < budget.hard_timeout_s:
+                    # the deadline, not the function, killed this call: a
+                    # scheduling fact, never a steepness or defect signal
+                    kind = "deadline_exhausted"
                 result.failures.append(
-                    {"n": n, "kind": resp["kind"], "message": resp["message"]})
-                if resp["kind"] == "exception" and not result.points and i == 0:
+                    {"n": n, "kind": kind, "message": resp["message"]})
+                # deadline_exhausted takes the generic force-backfill path
+                # below: the rescue window exists precisely to salvage a
+                # steep ladder after a deadline kill. It must only never
+                # read as first_probe_timeout (that blames the function).
+                if kind == "exception" and not result.points and i == 0:
                     run.rejected = resp["message"].splitlines()[-1][:200]
                     run.shapes.append(result)
                     return run
-                if resp["kind"] in ("timeout_hard", "runner_crash") \
+                if kind in ("timeout_hard", "runner_crash") \
                         and not result.points and i == 0:
                     run.first_probe_timeout = True
-                    result.stop_reason = resp["kind"]
+                    result.stop_reason = kind
                     break
-                reason = (resp["kind"] if resp["kind"] != "exception"
+                reason = (kind if kind != "exception"
                           else "exception_at_larger_n")
                 if ladder.force_backfill(n, reason):
                     continue
@@ -192,6 +241,9 @@ def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
                 run.mutates = True
             if resp.get("mutates_receiver"):
                 run.recv_mutates = True
+            if any(str(note).startswith("retained_bytes:")
+                   for note in resp.get("notes", [])):
+                run.retained_state = True
             result.points.append(Point(
                 n=n, seconds=min(timings) if timings else 0.0,
                 reps=resp["repeats_done"],
@@ -274,6 +326,12 @@ def _aggregate(report: FunctionReport, run: _Run, probed: bool) -> None:
                  for f in s.failures):
             report.provenance = ERROR
             report.provenance_detail = "runner crashed"
+        elif any(f["kind"] == "deadline_exhausted" for s in report.per_shape
+                 for f in s.failures):
+            report.provenance = TIMEOUT
+            report.provenance_detail = (
+                "per-function budget exhausted before a usable measurement "
+                "(steep, hung, or under-budgeted — indistinguishable here)")
         else:
             report.provenance = UNDRIVABLE
             reasons = [s.time_fit.reason for s in report.per_shape
@@ -300,8 +358,14 @@ def _aggregate(report: FunctionReport, run: _Run, probed: bool) -> None:
         conf = lower_confidence(conf)
     worst = next(s for s in report.per_shape if s.shape == shape)
     ns = [p.n for p in worst.points]
-    if ns and math.log2(max(ns) / min(ns)) < SPAN_CONFIDENT_DOUBLINGS:
+    span = math.log2(max(ns) / min(ns)) if ns else 0.0
+    if ns and span < SPAN_CONFIDENT_DOUBLINGS:
         conf = lower_confidence(conf)
+    # distinguishing n from n log n over a short ladder rests on a log
+    # factor moving ~2-3x total; `high` for that pair needs extra span
+    if (conf == "high" and span < ADJACENT_SPAN_DOUBLINGS
+            and {"O(n)", "O(n log n)"} <= set(fit.candidates)):
+        conf = "med"
     if fitting.monotonicity_violations([p.seconds for p in worst.points]):
         conf = lower_confidence(conf)
         report.flags["monotonicity_violations"] = True
@@ -309,6 +373,8 @@ def _aggregate(report: FunctionReport, run: _Run, probed: bool) -> None:
         conf = lower_confidence(conf)
         report.flags["rep_spread_over_5x"] = run.spread_flags
     if report.flags.get("suspected_memoization"):
+        conf = lower_confidence(conf)
+    if report.flags.get("state_retained_after_first_call"):
         conf = lower_confidence(conf)
     if probed and conf == "high":
         conf = "med"        # probed types cap confidence at medium

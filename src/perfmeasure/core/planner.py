@@ -70,6 +70,7 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
     else:
         fixed_desc = f"half_of:{driver_names[0]}"
     fixed_params = {p.name: fixed_desc for p in fixed_ints}
+    has_fixed_ints = bool(fixed_ints)
     fixed_params.update(
         {p.name: (p.type_ref if p.spec_type == "instance_"
                   else FIXED_TAG_DISPLAY[p.spec_type]) for p in fixed_other})
@@ -100,4 +101,5 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
         return out
 
     return DrivePlan(driver_params=driver_names, fixed_params=fixed_params,
-                     shapes=shapes, specs=specs), None
+                     shapes=shapes, specs=specs,
+                     has_fixed_ints=has_fixed_ints), None
