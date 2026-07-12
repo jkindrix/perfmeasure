@@ -18,7 +18,8 @@ omitted.
 ## Installation
 
 ```sh
-uv tool install /path/to/perf-lint      # or: pipx install / pip install .
+uv tool install git+https://github.com/jkindrix/perfmeasure
+# or from a clone: uv tool install . / pipx install . / pip install .
 ```
 
 Requires Python ≥ 3.10 on a Unix platform; Rust measurement additionally

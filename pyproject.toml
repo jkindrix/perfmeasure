@@ -2,6 +2,8 @@
 name = "perfmeasure"
 version = "0.5.0"
 description = "Empirical complexity measurement: runs functions at growing input sizes and curve-fits time and space to Big-O classes"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "tree-sitter>=0.23",
