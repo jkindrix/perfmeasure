@@ -141,6 +141,49 @@ pub fn rs_fib(n: u64) -> u64 {
     if n < 2 { n } else { rs_fib(n - 1).wrapping_add(rs_fib(n - 2)) }
 }
 
+// --- constructible receivers and instance params -----------------------------------
+
+#[derive(Default)]
+pub struct RsScaler {
+    factor: i64,
+}
+
+impl RsScaler {
+    pub fn rs_scale(&self, xs: &[i64]) -> Vec<i64> {
+        xs.iter().map(|x| x.wrapping_mul(self.factor + 2)).collect()
+    }
+
+    pub fn rs_pair_count(&self, xs: &[i64]) -> i64 {
+        let mut count = 0;
+        for a in xs {
+            for b in xs {
+                if (a.wrapping_add(*b)) % 7 == self.factor % 7 {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+}
+
+pub struct RsOpts {
+    pub strict: bool,
+}
+
+impl RsOpts {
+    pub fn new() -> Self {
+        RsOpts { strict: false }
+    }
+}
+
+pub fn rs_apply_opts(xs: &[i64], opts: &RsOpts) -> i64 {
+    if opts.strict {
+        xs.len() as i64
+    } else {
+        xs.iter().filter(|x| **x > 0).count() as i64
+    }
+}
+
 // --- honest failures --------------------------------------------------------------
 
 pub fn rs_always_panics(xs: &[i64]) -> i64 {

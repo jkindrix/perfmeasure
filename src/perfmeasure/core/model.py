@@ -70,12 +70,15 @@ class GenSpec:
     size: int
     seed: int
     of_index: int | None = None    # int_half_of: which arg's size to halve
+    type_ref: str | None = None    # instance_: language-native constructor ref
 
     def wire(self) -> dict[str, Any]:
         msg = {"spec_type": self.type_tag, "shape": self.shape,
                "size": self.size, "seed": self.seed}
         if self.of_index is not None:
             msg["of_index"] = self.of_index
+        if self.type_ref is not None:
+            msg["type_ref"] = self.type_ref
         return msg
 
 
@@ -87,6 +90,7 @@ class ParamInfo:
     spec_type: str | None      # None => not drivable via this param
     omitted: bool = False      # has a default; not passed at all
     detail: str = ""           # why not drivable, when spec_type is None
+    type_ref: str | None = None  # instance_: how the runner constructs it
 
 
 @dataclass
@@ -97,6 +101,7 @@ class FunctionDescriptor:
     params: list[ParamInfo]
     drivable: bool
     skip_reason: str | None = None
+    receiver: str | None = None   # methods: constructor ref for the instance
 
 
 @dataclass

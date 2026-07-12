@@ -120,6 +120,49 @@ impl Codec {
     }
 }
 
+#[derive(Default)]
+pub struct Scaler {
+    factor: i64,
+}
+
+impl Scaler {
+    pub fn scale(&self, xs: &[i64]) -> Vec<i64> {
+        xs.iter().map(|x| x.wrapping_mul(self.factor + 2)).collect()
+    }
+
+    pub fn consume(self, xs: &[i64]) -> i64 {
+        xs.len() as i64 + self.factor
+    }
+
+    pub fn tweak(&mut self, xs: &[i64]) {
+        self.factor += xs.len() as i64;
+    }
+}
+
+pub struct Opts {
+    pub strict: bool,
+}
+
+impl Opts {
+    pub fn new() -> Self {
+        Opts { strict: false }
+    }
+}
+
+pub fn validate_with(xs: &[i64], opts: &Opts) -> usize {
+    if opts.strict { xs.len() } else { xs.iter().filter(|x| **x > 0).count() }
+}
+
+pub struct NoCtor {
+    pub inner: i64,
+}
+
+impl NoCtor {
+    pub fn method(&self, xs: &[i64]) -> i64 {
+        xs.len() as i64 + self.inner
+    }
+}
+
 mod private_mod {
     pub fn hidden(xs: &[i64]) -> i64 {
         xs.len() as i64

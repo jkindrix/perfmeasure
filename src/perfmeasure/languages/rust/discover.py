@@ -107,16 +107,127 @@ def discover_crate(crate_root: Path) -> list[dict]:
             f"{crate_root} has no src/lib.rs — only library crates can be "
             "measured (an external harness cannot call into a binary)")
     crate = crate_name(crate_root / "Cargo.toml").replace("-", "_")
+    ctors = Ctors(crate)
+    _collect_ctors(lib, crate, [], crate_root / "src", ctors)
     functions: list[dict] = []
-    _scan_file(lib, crate, [], crate_root / "src", functions, module_pub=True)
+    _scan_file(lib, crate, [], crate_root / "src", functions,
+               module_pub=True, ctors=ctors)
     return functions
 
 
+class Ctors:
+    """Zero-arg construction expressions for same-crate types, collected
+    textually: unit structs, #[derive(Default)], or an inherent zero-arg
+    `pub fn new()`. Compile-retry backstops what the text gets wrong."""
+
+    def __init__(self, crate: str):
+        self.crate = crate
+        self.by_path: dict[str, str] = {}     # crate::mod::X -> ctor expr
+        self.by_name: dict[str, list[str]] = {}
+
+    def add(self, mod_path: list[str], name: str, expr: str,
+            override: bool = False) -> None:
+        path = "::".join([self.crate, *mod_path, name])
+        if override or path not in self.by_path:
+            self.by_path[path] = expr
+            self.by_name.setdefault(name, [])
+            if path not in self.by_name[name]:
+                self.by_name[name].append(path)
+
+    def resolve(self, name: str, mod_path: list[str]) -> str | None:
+        """Same-module first, else a crate-unique name match."""
+        exact = "::".join([self.crate, *mod_path, name])
+        if exact in self.by_path:
+            return self.by_path[exact]
+        paths = self.by_name.get(name, [])
+        if len(paths) == 1:
+            return self.by_path[paths[0]]
+        return None
+
+
+def _collect_ctors(path: Path, crate: str, mod_path: list[str],
+                   src_root: Path, ctors: Ctors) -> None:
+    parser = Parser(RUST)
+    _collect_walk(parser.parse(path.read_bytes()).root_node,
+                  path, crate, mod_path, src_root, ctors)
+
+
+def _collect_walk(node, path, crate, mod_path, src_root, ctors):
+    pending = []
+    for child in node.children:
+        if child.type == "attribute_item":
+            pending.append(child)
+            continue
+        attrs, pending = pending, []
+        if child.type in ("struct_item", "enum_item"):
+            name_node = child.child_by_field_name("name")
+            if name_node is None or \
+                    child.child_by_field_name("type_parameters") is not None:
+                continue
+            name = name_node.text.decode()
+            full = "::".join([crate, *mod_path, name])
+            derives_default = any(
+                b"derive" in a.text and b"Default" in a.text for a in attrs)
+            is_unit = (child.type == "struct_item"
+                       and child.child_by_field_name("body") is None)
+            if is_unit:
+                ctors.add(mod_path, name, full, override=True)
+            elif derives_default:
+                ctors.add(mod_path, name, f"{full}::default()", override=True)
+        elif child.type == "impl_item":
+            if child.child_by_field_name("trait") is not None:
+                # `impl Default for X` counts as constructible
+                tr = child.child_by_field_name("trait")
+                tnode = child.child_by_field_name("type")
+                if tr is not None and tr.text == b"Default" \
+                        and tnode is not None \
+                        and tnode.type == "type_identifier":
+                    name = tnode.text.decode()
+                    full = "::".join([crate, *mod_path, name])
+                    ctors.add(mod_path, name, f"{full}::default()",
+                              override=True)
+                continue
+            tnode = child.child_by_field_name("type")
+            body = child.child_by_field_name("body")
+            if tnode is None or tnode.type != "type_identifier" or body is None:
+                continue
+            name = tnode.text.decode()
+            for member in body.children:
+                if member.type != "function_item":
+                    continue
+                fname = member.child_by_field_name("name")
+                plist = member.child_by_field_name("parameters")
+                empty = plist is None or not any(
+                    p.type in ("parameter", "self_parameter")
+                    for p in plist.children)
+                if fname is not None and fname.text == b"new" \
+                        and _is_pub(member) and empty:
+                    full = "::".join([crate, *mod_path, name])
+                    ctors.add(mod_path, name, f"{full}::new()")
+        elif child.type == "mod_item":
+            name_node = child.child_by_field_name("name")
+            if name_node is None or _cfg_test(attrs) or _cfg_inactive(attrs):
+                continue
+            name = name_node.text.decode()
+            body = child.child_by_field_name("body")
+            if body is not None:
+                _collect_walk(body, path, crate, mod_path + [name],
+                              src_root, ctors)
+            else:
+                for cand in (src_root / Path(*mod_path) / f"{name}.rs",
+                             src_root / Path(*mod_path) / name / "mod.rs"):
+                    if cand.exists():
+                        _collect_ctors(cand, crate, mod_path + [name],
+                                       src_root, ctors)
+                        break
+
+
 def _scan_file(path: Path, crate: str, mod_path: list[str], src_root: Path,
-               out: list[dict], module_pub: bool) -> None:
+               out: list[dict], module_pub: bool, ctors: Ctors) -> None:
     parser = Parser(RUST)
     tree = parser.parse(path.read_bytes())
-    _walk(tree.root_node, path, crate, mod_path, src_root, out, module_pub)
+    _walk(tree.root_node, path, crate, mod_path, src_root, out, module_pub,
+          ctors)
 
 
 def _is_pub(node) -> bool:
@@ -149,7 +260,7 @@ def _cfg_inactive(attrs: list) -> str | None:
     return None
 
 
-def _walk(node, path, crate, mod_path, src_root, out, module_pub):
+def _walk(node, path, crate, mod_path, src_root, out, module_pub, ctors):
     pending_attrs = []
     for child in node.children:
         if child.type == "attribute_item":
@@ -158,7 +269,8 @@ def _walk(node, path, crate, mod_path, src_root, out, module_pub):
         attrs, pending_attrs = pending_attrs, []
         if child.type == "function_item":
             inactive = _cfg_inactive(attrs)
-            entry = _describe(child, path, crate, mod_path, module_pub)
+            entry = _describe(child, path, crate, mod_path, mod_path,
+                              module_pub, ctors)
             if entry is None:
                 continue                # private / unreachable: not API
             if inactive:
@@ -184,7 +296,8 @@ def _walk(node, path, crate, mod_path, src_root, out, module_pub):
                 mattrs, impl_attrs = impl_attrs, []
                 if member.type != "function_item":
                     continue
-                entry = _describe(member, path, crate, impl_path, module_pub)
+                entry = _describe(member, path, crate, impl_path, mod_path,
+                                  module_pub, ctors)
                 if entry is None:
                     continue
                 inactive = _cfg_inactive(mattrs)
@@ -212,19 +325,21 @@ def _walk(node, path, crate, mod_path, src_root, out, module_pub):
             pub = module_pub and _is_pub(child)
             body = child.child_by_field_name("body")
             if body is not None:                      # inline mod { }
-                _walk(body, path, crate, mod_path + [name], src_root, out, pub)
+                _walk(body, path, crate, mod_path + [name], src_root, out,
+                      pub, ctors)
             else:                                     # mod file
                 for cand in (src_root / Path(*mod_path) / f"{name}.rs",
                              src_root / Path(*mod_path) / name / "mod.rs"):
                     if cand.exists():
                         _scan_file(cand, crate, mod_path + [name], src_root,
-                                   out, pub)
+                                   out, pub, ctors)
                         break
 
 
-def _describe(node, path, crate, mod_path, module_pub) -> dict | None:
+def _describe(node, path, crate, fid_path, module_ctx, module_pub,
+              ctors: Ctors) -> dict | None:
     name = node.child_by_field_name("name").text.decode()
-    fid = "::".join([crate, *mod_path, name])
+    fid = "::".join([crate, *fid_path, name])
     base = {"fid": fid, "file": str(path),
             "line": node.start_point[0] + 1, "params": []}
 
@@ -244,10 +359,22 @@ def _describe(node, path, crate, mod_path, module_pub) -> dict | None:
         return skip("generic")
 
     params = []
+    receiver = None
     plist = node.child_by_field_name("parameters")
     for p in plist.children if plist else []:
         if p.type == "self_parameter":
-            return skip("method (self receiver; needs a constructed instance)")
+            self_text = " ".join(p.text.decode().split())
+            if self_text != "&self":
+                return skip(f"method ({self_text} receiver — mutation/"
+                            "consumption not repeatable)")
+            type_name = fid_path[-1] if fid_path != module_ctx else None
+            ctor = (ctors.resolve(type_name, module_ctx)
+                    if type_name else None)
+            if ctor is None:
+                return skip("method (self receiver; no zero-arg "
+                            f"constructor for {type_name})")
+            receiver = ctor
+            continue
         if p.type != "parameter":
             continue
         pname_node = p.child_by_field_name("pattern")
@@ -260,8 +387,18 @@ def _describe(node, path, crate, mod_path, module_pub) -> dict | None:
             return skip(f"param '{pname_node.text.decode()}': &mut")
         norm = _normalize(raw)
         entry = TYPE_WHITELIST.get(norm)
+        type_ref = None
         if entry is None and norm.startswith("Option<"):
             entry = ("opt_none", "none")     # None type-infers at any call site
+        if entry is None:
+            # same-crate constructible struct: a fixed default instance
+            m = re.fullmatch(r"(&?)([A-Z]\w*)", norm)
+            if m:
+                ctor = ctors.resolve(m.group(2), module_ctx)
+                if ctor is not None:
+                    entry = ("instance_",
+                             "borrow_ctor" if m.group(1) else "own_ctor")
+                    type_ref = ctor
         detail = ""
         if entry is None:
             detail = (f"filesystem path (I/O domain, not generated)"
@@ -273,11 +410,15 @@ def _describe(node, path, crate, mod_path, module_pub) -> dict | None:
                  "detail": detail,
                  "style": entry[1] if entry else None,
                  "cast": entry[2] if entry and len(entry) > 2 else None,
+                 "type_ref": type_ref,
                  "rust_type": norm}
         params.append(pinfo)
     undrivable = [p for p in params if p["spec_type"] is None]
-    return {**base, "params": params,
-            "drivable": not undrivable,
-            "skip_reason": (f"param '{undrivable[0]['name']}': "
-                            f"{undrivable[0]['detail']}"
-                            if undrivable else None)}
+    result = {**base, "params": params,
+              "drivable": not undrivable,
+              "skip_reason": (f"param '{undrivable[0]['name']}': "
+                              f"{undrivable[0]['detail']}"
+                              if undrivable else None)}
+    if receiver is not None:
+        result["receiver"] = receiver
+    return result

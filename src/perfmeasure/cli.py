@@ -26,10 +26,12 @@ def _descriptor(raw: dict) -> FunctionDescriptor:
         fid=raw["fid"], file=raw.get("file", ""), line=raw.get("line", 0),
         params=[ParamInfo(name=p["name"], spec_type=p.get("spec_type"),
                           omitted=p.get("omitted", False),
-                          detail=p.get("detail", ""))
+                          detail=p.get("detail", ""),
+                          type_ref=p.get("type_ref"))
                 for p in raw.get("params", [])],
         drivable=raw.get("drivable", False),
         skip_reason=raw.get("skip_reason"),
+        receiver=raw.get("receiver"),
     )
 
 

@@ -98,8 +98,15 @@ precision**.
 - **Probed types are educated guesses.** A function tolerating a
   `list[int]` doesn't prove the measurement is semantically meaningful;
   probed results are capped at medium confidence and the generator spec
-  is in the JSON record for audit. Methods, `Callable`s, and custom-class
-  params stay `UNDRIVABLE` — always with the reason shown.
+  is in the JSON record for audit.
+- **Methods and instance params are measured against default-constructed
+  state.** Methods on zero-arg-constructible types (`Default`, `new()`,
+  unit structs; Python `Cls()`) and struct/class-typed params are driven
+  with a fixed fresh instance — the constructor is named in the record,
+  results are flagged `fixed_instance_inputs` and capped at medium
+  confidence, because cost that depends on instance state is invisible at
+  that fixed point. `&mut self`/consuming receivers and types without a
+  zero-arg constructor stay `UNDRIVABLE`, naming the type.
 - **Rust v1 reaches public, non-generic, non-`&mut` functions of library
   crates** — every skip carries its reason, and the scan summary counts
   them. Type aliases stay undrivable by design (resolving them is the

@@ -88,10 +88,12 @@ def _import_file(path: str):
     try:
         mod = importlib.import_module(modname)
     except BaseException:
-        # standalone script fallback
+        # standalone script fallback; registered so classes defined here
+        # stay importable by module name (instance_ construction)
         spec = importlib.util.spec_from_file_location(
             "_perfmeasure_target_" + str(len(_module_cache)), path)
         mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
         spec.loader.exec_module(mod)
     _module_cache[path] = mod
     return mod
@@ -145,7 +147,25 @@ def _map_hint(hint) -> tuple[str | None, str]:
         if not args or args[0] is int:
             return "set_int", ""
         return None, f"element type {args[0]!r}"
+    if inspect.isclass(hint) and hint.__module__ not in ("builtins", "typing"):
+        # user-defined class: constructible zero-arg => a fixed instance
+        if _zero_arg_constructible(hint):
+            return "instance_", f"{hint.__module__}:{hint.__qualname__}"
+        return None, (f"no zero-arg constructor for {hint.__qualname__}")
     return None, f"unsupported type {hint!r}"
+
+
+_ctor_cache: dict[type, bool] = {}
+
+
+def _zero_arg_constructible(cls) -> bool:
+    if cls not in _ctor_cache:
+        try:
+            cls()
+            _ctor_cache[cls] = True
+        except Exception:
+            _ctor_cache[cls] = False
+    return _ctor_cache[cls]
 
 
 def _describe_function(fid, fn):
@@ -178,8 +198,11 @@ def _describe_function(fid, fn):
                            "omitted": True, "detail": "has default"})
             continue
         tag, detail = _map_hint(hints.get(p.name, p.annotation))
-        params.append({"name": p.name, "spec_type": tag,
-                       "omitted": False, "detail": detail})
+        entry = {"name": p.name, "spec_type": tag,
+                 "omitted": False, "detail": detail}
+        if tag == "instance_":       # detail slot carries the constructor ref
+            entry["type_ref"], entry["detail"] = detail, ""
+        params.append(entry)
         if tag is None:
             drivable = False
             reason = reason or f"param '{p.name}': {detail}"
@@ -227,6 +250,31 @@ def do_discover(req):
                 continue
             _fn_cache[fid] = fn
             functions.append(_describe_function(fid, fn))
+        for cname, cls in inspect.getmembers(mod, inspect.isclass):
+            if cls.__module__ != mod.__name__ or cname.startswith("_"):
+                continue
+            cfid = f"{os.path.abspath(path)}::{cls.__qualname__}"
+            if not _zero_arg_constructible(cls):
+                if not only:
+                    functions.append({
+                        "fid": cfid, "file": path, "line": 0, "params": [],
+                        "drivable": False,
+                        "skip_reason": "methods unreachable: no zero-arg "
+                                       "constructor"})
+                continue
+            inst = cls()
+            for mname, m in inspect.getmembers(inst, callable):
+                if mname.startswith("_") or not (
+                        inspect.ismethod(m) or inspect.isfunction(m)):
+                    continue
+                if getattr(m, "__module__", None) != mod.__name__:
+                    continue        # inherited from elsewhere
+                fid = f"{cfid}.{mname}"
+                if only and fid != only:
+                    continue
+                desc = _describe_function(fid, m)   # bound: self already gone
+                desc["receiver"] = f"{cls.__module__}:{cls.__qualname__}"
+                functions.append(desc)
     return {"op": "result", "id": req["id"], "functions": functions}
 
 
@@ -234,11 +282,24 @@ def _resolve(fid):
     if fid not in _fn_cache:
         path, _, qualname = fid.partition("::")
         mod = _import_file(path)
-        obj = mod
+        obj, prev = mod, None
         for part in qualname.split("."):
-            obj = getattr(obj, part)
-        _fn_cache[fid] = obj
+            prev, obj = obj, getattr(obj, part)
+        if inspect.isclass(prev):
+            # method: bind to a FRESH zero-arg instance per call op, so
+            # receiver state never leaks across sizes/shapes
+            _fn_cache[fid] = ("method", prev, qualname.rsplit(".", 1)[1])
+        else:
+            _fn_cache[fid] = obj
     return _fn_cache[fid]
+
+
+def _callable_for(fid):
+    fn = _resolve(fid)
+    if isinstance(fn, tuple):
+        _, cls, name = fn
+        return getattr(cls(), name)
+    return fn
 
 
 # --- input materialization ------------------------------------------------------
@@ -259,6 +320,12 @@ def materialize(spec):
         return size
     if tag == "bool_":
         return bool(size)
+    if tag == "instance_":
+        modname, _, qual = spec["type_ref"].partition(":")
+        obj = importlib.import_module(modname)
+        for part in qual.split("."):
+            obj = getattr(obj, part)
+        return obj()
     if tag == "list_int":
         if shape == "all_equal":
             return [7] * size
@@ -382,10 +449,13 @@ def do_call(req):
     started = time.perf_counter()
     fid = req["fid"]
     try:
-        fn = _resolve(fid)
-    except BaseException:
+        fn = _callable_for(fid)
+    except AttributeError:
         return error(req["id"], fid, "not_found",
                      traceback.format_exc(limit=2).strip()[-300:])
+    except BaseException:
+        return error(req["id"], fid, "exception",
+                     traceback.format_exc(limit=3).strip()[-500:])
     specs = req["inputs"]
     try:
         args = _materialize_all(specs)

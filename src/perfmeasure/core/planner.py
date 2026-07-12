@@ -22,7 +22,7 @@ from perfmeasure.protocol import seed_for
 FIXED_INT_VALUE = 1
 FIXED_VARIANTS = 3      # 0: value 1, 1: value 0, 2: half of the first driver
 # drivable but never scalable; wire value = GenSpec.size
-FIXED_TAGS = {"bool_": 0, "duration_ms": 1, "opt_none": 0}
+FIXED_TAGS = {"bool_": 0, "duration_ms": 1, "opt_none": 0, "instance_": 0}
 FIXED_TAG_DISPLAY = {"bool_": False, "duration_ms": "1ms", "opt_none": None}
 
 
@@ -71,7 +71,8 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
         fixed_desc = f"half_of:{driver_names[0]}"
     fixed_params = {p.name: fixed_desc for p in fixed_ints}
     fixed_params.update(
-        {p.name: FIXED_TAG_DISPLAY[p.spec_type] for p in fixed_other})
+        {p.name: (p.type_ref if p.spec_type == "instance_"
+                  else FIXED_TAG_DISPLAY[p.spec_type]) for p in fixed_other})
 
     def specs(shape: str, size: int) -> list[GenSpec]:
         out = []
@@ -83,7 +84,8 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
             elif p.spec_type in FIXED_TAGS:
                 out.append(GenSpec(p.spec_type, "fixed",
                                    FIXED_TAGS[p.spec_type],
-                                   seed_for(desc.fid, "fixed", 0)))
+                                   seed_for(desc.fid, "fixed", 0),
+                                   type_ref=p.type_ref))
             elif fixed_variant == 2:
                 spec = GenSpec("int_half_of", "magnitude", 0,
                                seed_for(desc.fid, "fixed", 0))

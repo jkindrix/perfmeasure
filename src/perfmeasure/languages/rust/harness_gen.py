@@ -57,13 +57,24 @@ def _template() -> str:
 def _arm(fn: dict) -> str:
     fid = fn["fid"]
     lines = [f'        // ARM {fid}', f'        "{fid}" => {{']
-    own: list[int] = []
+    own: list[str] = []                      # prep expressions, tuple-ordered
     exprs: list[str] = []
+    receiver = fn.get("receiver")
+    if receiver:
+        lines.append(f"            let __recv = {receiver};")
     for i, p in enumerate(fn["params"]):
         tag, style, rtype = p["spec_type"], p["style"], p["rust_type"]
         cast = p.get("cast")
         if style == "none":                  # Option<T>: None type-infers
             exprs.append("None")
+            continue
+        if style == "borrow_ctor":           # fixed default instance
+            lines.append(f"            let a{i} = {p['type_ref']};")
+            exprs.append(f"&a{i}")
+            continue
+        if style == "own_ctor":              # consumed: fresh instance per rep
+            exprs.append(f"__p.{len(own)}")
+            own.append(p["type_ref"])
             continue
         if cast:                             # other-width int/float slices
             base_gen = "shaped_i64" if tag == "list_int" else "gen_list_f64"
@@ -73,7 +84,7 @@ def _arm(fn: dict) -> str:
                 f".map(|v| v as {cast}).collect();")
             if style == "own":
                 exprs.append(f"__p.{len(own)}")
-                own.append(i)
+                own.append(f"a{i}.clone()")
             else:
                 exprs.append(f"&a{i}[..]")
             continue
@@ -98,7 +109,7 @@ def _arm(fn: dict) -> str:
                          f"{_GEN[tag]}(&req.inputs[{i}]);")
             if style == "own":
                 exprs.append(f"__p.{len(own)}")
-                own.append(i)
+                own.append(f"a{i}.clone()")
             elif style == "borrow_slice":
                 exprs.append(f"&a{i}[..]")
             elif style == "borrow_str_slice":   # &[&str] view over Vec<String>
@@ -110,12 +121,13 @@ def _arm(fn: dict) -> str:
             else:
                 exprs.append(f"&a{i}")
     if own:
-        prep = "|| (" + ", ".join(f"a{i}.clone()" for i in own) + ",)"
+        prep = "|| (" + ", ".join(own) + ",)"
         head = "|__p|"
     else:
         prep = "|| ()"
         head = "|_|"
-    call = (f"{head} {{ black_box({fid}("
+    target = (f"__recv.{fid.rsplit('::', 1)[1]}" if receiver else fid)
+    call = (f"{head} {{ black_box({target}("
             + ", ".join(f"black_box({e})" for e in exprs) + ")); }")
     lines.append(f"            result_json(&req, run_measured(&req, "
                  f"{str(bool(own)).lower()}, {prep}, {call}))")

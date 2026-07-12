@@ -36,6 +36,15 @@
                          "expect_fixed": {"i": "half_of:xs"}},
   "unprobeable": {"provenance": "UNDRIVABLE"},
 
+  "Accumulator.scale": {"time": "O(n)", "space": "O(n)",
+                        "expect_flag": "fixed_instance_inputs"},
+  "Accumulator.pair_count": {"time": "O(n^2)"},
+  "NeedsArgs": {"provenance": "UNDRIVABLE",
+                "detail_contains": "no zero-arg constructor"},
+  "apply_options": {"time": "O(n)",
+                    "expect_fixed": {"opts": "methods_and_instances:Options"},
+                    "expect_flag": "fixed_instance_inputs"},
+
   "sum_of_digits": {"time": "O(log n)"},
   "max_scan": {"time": "O(n)"},
   "join_words": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"], "space": "O(n)",

@@ -69,6 +69,12 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
 
     report.driver_params = drive.driver_params
     report.fixed_params = drive.fixed_params
+    if desc.receiver:
+        report.fixed_params["self"] = desc.receiver
+    if desc.receiver or any(p.spec_type == "instance_" for p in desc.params):
+        # measured against default-constructed instances: cost that depends
+        # on instance state is invisible at this fixed point
+        report.flags["fixed_instance_inputs"] = True
     report.type_source = {
         p.name: ("probed" if p.detail == "probed" else "hinted")
         for p in desc.params if p.name in drive.driver_params}
@@ -259,4 +265,6 @@ def _aggregate(report: FunctionReport, run: _Run, probed: bool) -> None:
         conf = lower_confidence(conf)
     if probed and conf == "high":
         conf = "med"        # probed types cap confidence at medium
+    if report.flags.get("fixed_instance_inputs") and conf == "high":
+        conf = "med"
     report.confidence = conf

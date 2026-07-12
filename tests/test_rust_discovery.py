@@ -87,6 +87,27 @@ def test_impl_associated_fns_are_discovered():
     assoc = fns["assoc_sum"]
     assert assoc["fid"] == "tiny_crate::Codec::assoc_sum"
     assert assoc["drivable"] is True
-    assert fns["with_receiver"]["drivable"] is False
-    assert "self receiver" in fns["with_receiver"]["skip_reason"]
     assert "private_helper" not in fns
+
+
+def test_receiver_methods_on_constructible_types():
+    fns = _by_name()
+    # unit struct: constructible by name
+    wr = fns["with_receiver"]
+    assert wr["drivable"] is True and wr["receiver"] == "tiny_crate::Codec"
+    # derive(Default)
+    sc = fns["scale"]
+    assert sc["drivable"] is True
+    assert sc["receiver"] == "tiny_crate::Scaler::default()"
+    # consuming / &mut receivers stay out, with reasons
+    assert "not repeatable" in fns["consume"]["skip_reason"]
+    assert "not repeatable" in fns["tweak"]["skip_reason"]
+    # no zero-arg constructor
+    assert "no zero-arg constructor" in fns["method"]["skip_reason"]
+
+
+def test_constructible_struct_params():
+    p = _by_name()["validate_with"]["params"][1]
+    assert p["spec_type"] == "instance_"
+    assert p["style"] == "borrow_ctor"
+    assert p["type_ref"] == "tiny_crate::Opts::new()"
