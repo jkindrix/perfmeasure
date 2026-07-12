@@ -75,7 +75,8 @@
   },
   "rs_insertion_sort": {
     "time": "O(n^2)",
-    "worst_shape_not": "sorted"
+    "worst_shape_not": "sorted",
+    "worst_shape": "reversed"
   },
   "rs_triple_count": {
     "time": "O(n^3)",

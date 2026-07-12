@@ -33,8 +33,18 @@ def render_human(reports: list[FunctionReport], verbose: bool = False) -> str:
             if len(r.space_candidates) > 1:
                 s = " | ".join(r.space_candidates)
             worst = f" worst@{r.time_worst_shape}" if r.time_worst_shape else ""
+            # headline-honesty flags: evidence that qualifies the class
+            # itself must ride on the headline line, not hide in JSON
+            notes = []
+            if r.flags.get("constant_within_budget_window"):
+                notes.append(f"flat only to n={r.flags['constant_within_budget_window']}"
+                             " — ladder budget-truncated")
+            if r.flags.get("timeout_above_window"):
+                notes.append(f"hard timeout at n={r.flags['timeout_above_window']}"
+                             " defies the fitted class")
+            suffix = f"  ({'; '.join(notes)})" if notes else ""
             lines.append(f"{name}  T={t}{worst}  S={s}  "
-                         f"{r.provenance} [{r.confidence}]")
+                         f"{r.provenance} [{r.confidence}]{suffix}")
         else:
             lines.append(f"{name}  {r.provenance}({r.provenance_detail})")
         if verbose:

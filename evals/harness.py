@@ -51,6 +51,9 @@ EXACT_FLOOR = 72            # ratchet upward when the fitter improves
                             # (80 observed with the instructions channel)
 ADJACENT_ONLY_MAX = 4       # passes that exist only via time_any adjacency
                             # (2 observed with the instructions channel)
+SPACE_ADJACENT_ONLY_MAX = 2  # same ratchet for space_any: space-side
+                             # inflation must not hide inside adjacency
+                             # (0 observed with the coefficient-step check)
 EXPECTED = json.loads((Path(__file__).parent / "expected.json").read_text())
 if shutil.which("cargo"):
     EXPECTED.update(json.loads(
@@ -102,7 +105,7 @@ def main() -> int:
 
     rows, failures, widths = [], [], []
     exact = ambig_ok = time_total = adjacent_only = 0
-    space_ok = space_total = 0
+    space_ok = space_total = space_adjacent_only = 0
     undrv = {"inherent": [0, 0], "tool_limit": [0, 0]}
     by_class: dict[str, list[int]] = {}
     scored_fids: set[str] = set()
@@ -161,6 +164,9 @@ def main() -> int:
             s_ok = (r.space_cls in s_accepted
                     or exp["space"] in r.space_candidates)
             space_ok += s_ok
+            if (s_ok and r.space_cls != exp["space"]
+                    and exp["space"] not in r.space_candidates):
+                space_adjacent_only += 1
             verdicts.append("ok" if s_ok else "FAIL")
             if not s_ok:
                 failures.append(f"{name}: space expected {exp['space']}, "
@@ -169,6 +175,10 @@ def main() -> int:
             verdicts.append("FAIL")
             failures.append(f"{name}: worst shape must not be "
                             f"{exp['worst_shape_not']}")
+        if exp.get("worst_shape") and r.time_worst_shape != exp["worst_shape"]:
+            verdicts.append("FAIL")
+            failures.append(f"{name}: worst shape expected "
+                            f"{exp['worst_shape']}, got {r.time_worst_shape}")
         if exp.get("expect_flag") and not r.flags.get(exp["expect_flag"]):
             verdicts.append("FAIL")
             failures.append(f"{name}: flag {exp['expect_flag']} not set "
@@ -210,7 +220,8 @@ def main() -> int:
         f"{cls} {ok}/{total}"
         for cls, (ok, total) in sorted(by_class.items())))
     if space_total:
-        print(f"space: {space_ok}/{space_total} pass")
+        print(f"space: {space_ok}/{space_total} pass "
+              f"({space_adjacent_only} pass only via adjacency)")
     undrv_ok = sum(v[0] for v in undrv.values())
     undrv_total = sum(v[1] for v in undrv.values())
     if undrv_total:
@@ -230,6 +241,9 @@ def main() -> int:
         if adjacent_only > ADJACENT_ONLY_MAX:
             failures.append(f"{adjacent_only} adjacency-only passes > "
                             f"ratchet {ADJACENT_ONLY_MAX}")
+        if space_adjacent_only > SPACE_ADJACENT_ONLY_MAX:
+            failures.append(f"{space_adjacent_only} space adjacency-only "
+                            f"passes > ratchet {SPACE_ADJACENT_ONLY_MAX}")
     if failures:
         print("\nFAILURES:")
         for f in failures:

@@ -56,7 +56,8 @@
   "insertion_sort": {
     "time": "O(n^2)",
     "space": "O(n)",
-    "worst_shape_not": "sorted"
+    "worst_shape_not": "sorted",
+    "worst_shape": "reversed"
   },
   "contains_duplicate_quadratic": {
     "time": "O(n^2)",
@@ -327,6 +328,12 @@
   "passthrough": {
     "time": "O(1)",
     "space": "O(1)"
+  },
+  "step_alloc": {
+    "time": "O(n)",
+    "space": "O(n)",
+    "expect_flag": "coefficient_step_suspected",
+    "note": "2x per-element alloc step at n=4096: O(n) must stay a candidate"
   },
   "SortedVec.add": {
     "time": "O(n)",

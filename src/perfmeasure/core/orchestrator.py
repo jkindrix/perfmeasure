@@ -20,7 +20,7 @@ from perfmeasure.core.ladder import (
     INT_N_MAX, N_MAX, N0_COLLECTION, N0_INT, Budget, ShapeLadder,
 )
 from perfmeasure.core.model import (
-    AMBIGUOUS, CLASS_ORDER, ERROR, MEASURED, TIMEOUT, UNDRIVABLE,
+    AMBIGUOUS, CLASS_ORDER, CLASSES, ERROR, MEASURED, TIMEOUT, UNDRIVABLE,
     DrivePlan, FunctionDescriptor, FunctionReport, Point, ShapeResult,
     lower_confidence,
 )
@@ -131,7 +131,7 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
         return report
 
     _fit_shapes(run, report)
-    _aggregate(report, run, probed)
+    _aggregate(report, run, probed, budget)
     # black_box is best-effort by documented contract: fully optimized-out
     # compiled code reads as a flat sub-nanosecond O(1) — detectable, so
     # detect it instead of reporting the deletion as a measurement
@@ -324,6 +324,9 @@ def _fit_shapes(run: _Run, report: FunctionReport) -> None:
                     s.ops_fit.cls = "O(n log n)"
                     s.ops_fit.candidates = ["O(n log n)"]
                     s.ops_fit.reason = "per-element log growth"
+        if any(f and fitting.STEP_NOTE in f.reason
+               for f in (s.time_fit, s.space_fit, s.ops_fit)):
+            report.flags["coefficient_step_suspected"] = True
 
 
 def _blindspot_check(s: ShapeResult, report: FunctionReport) -> None:
@@ -350,7 +353,32 @@ def _blindspot_check(s: ShapeResult, report: FunctionReport) -> None:
         report.flags["untracked_alloc_suspected"] = True
 
 
-def _aggregate(report: FunctionReport, run: _Run, probed: bool) -> None:
+def _worst(fits: list, report: FunctionReport, value) -> tuple:
+    """Worst (shape, fit): highest class wins; same-class ties break on
+    measured cost at the largest size every tied shape reached — shape
+    iteration order is not evidence, the coefficient is (insertion sort
+    is worst on reversed input even though random fits the same class)."""
+    top = max(CLASS_ORDER[f.cls] for _, f in fits)
+    tied = [(shape, f) for shape, f in fits if CLASS_ORDER[f.cls] == top]
+    if len(tied) > 1:
+        names = {shape for shape, _ in tied}
+        costs = {s.shape: {p.n: value(p) for p in s.points
+                           if value(p) is not None}
+                 for s in report.per_shape if s.shape in names}
+        common = set.intersection(*(set(c) for c in costs.values()))
+        if common:
+            n = max(common)
+            return max(tied, key=lambda t: costs[t[0]][n])
+    return tied[0]
+
+
+def _budget_stopped(stop_reason: str) -> bool:
+    return any(tok in stop_reason
+               for tok in ("budget", "deadline", "projected_cost"))
+
+
+def _aggregate(report: FunctionReport, run: _Run, probed: bool,
+               budget: Budget) -> None:
     time_fits = [(s.shape, s.time_fit) for s in report.per_shape
                  if s.time_fit and s.time_fit.cls]
     space_fits = [(s.shape, s.space_fit) for s in report.per_shape
@@ -379,7 +407,7 @@ def _aggregate(report: FunctionReport, run: _Run, probed: bool) -> None:
                 else "no successful measurements")
         return
 
-    shape, fit = max(time_fits, key=lambda t: CLASS_ORDER[t[1].cls])
+    shape, fit = _worst(time_fits, report, lambda p: p.seconds)
     report.time_cls = fit.cls
     report.time_candidates = fit.candidates
     report.time_worst_shape = shape
@@ -411,10 +439,45 @@ def _aggregate(report: FunctionReport, run: _Run, probed: bool) -> None:
                                  else MEASURED)
 
     if space_fits:
-        sshape, sfit = max(space_fits, key=lambda t: CLASS_ORDER[t[1].cls])
+        sshape, sfit = _worst(space_fits, report, lambda p: p.peak_bytes)
         report.space_cls = sfit.cls
         report.space_candidates = sfit.candidates
         report.space_worst_shape = sshape
+
+    # a time-O(1) verdict is an absence-of-growth claim, and budget
+    # truncation weakens exactly that evidence: when every fitted ladder
+    # was stopped by the budget (not by n_max or by the data), a large
+    # constant may still be masking a term that never got room to emerge.
+    # A true cheap O(1) reaches n_max, so it never carries this flag.
+    # (Space stays out: O(1) space with a budget-stopped ladder describes
+    # half of all real functions — the flag would be noise, and the
+    # deep-size blindspot check already covers masked space growth.)
+    if report.time_cls == "O(1)":
+        fitted = [s for s in report.per_shape if s.time_fit and s.time_fit.cls]
+        if fitted and all(_budget_stopped(s.stop_reason) for s in fitted):
+            report.flags["constant_within_budget_window"] = report.max_n_reached
+
+    # a hard timeout ABOVE the fitted window that the fitted class cannot
+    # explain (extrapolating the winner's own curve to the timeout size
+    # predicts a fraction of the timeout) is evidence of a steeper regime
+    # past the window — surface it instead of leaving it buried in
+    # per-shape failures. The killed CALL is warmup + reps + a traced
+    # pass (several executions), so a class projecting anywhere near
+    # timeout/execs honestly explains the kill and stays quiet; only a
+    # projection far below that (a 20x+ single-call overrun) defies it.
+    tmo_ns = [f["n"] for s in report.per_shape for f in s.failures
+              if f["kind"] == "timeout_hard"]
+    if tmo_ns and report.time_cls and report.max_n_reached:
+        worst_pts = next(
+            (s.points for s in report.per_shape if s.shape == shape), [])
+        if worst_pts:
+            last = max(worst_pts, key=lambda p: p.n)
+            fn_cls = dict(CLASSES)[report.time_cls]
+            n_t = max(tmo_ns)
+            if n_t > last.n and fn_cls(last.n) > 0:
+                projected = last.seconds * fn_cls(n_t) / fn_cls(last.n)
+                if projected < 0.05 * budget.hard_timeout_s:
+                    report.flags["timeout_above_window"] = n_t
 
     conf = "high"
     if fit.margin is not None and fit.margin < fitting.CONFIDENT_MARGIN:
@@ -438,6 +501,17 @@ def _aggregate(report: FunctionReport, run: _Run, probed: bool) -> None:
     if report.flags.get("suspected_memoization"):
         conf = lower_confidence(conf)
     if report.flags.get("state_retained_after_first_call"):
+        conf = lower_confidence(conf)
+    # model-mismatch suspicions demote like every other suspicion flag:
+    # a detected coefficient step or an allocator blindspot means the
+    # reported class rests on a model the data visibly bent away from
+    if report.flags.get("coefficient_step_suspected"):
+        conf = lower_confidence(conf)
+    if report.flags.get("untracked_alloc_suspected"):
+        conf = lower_confidence(conf)
+    if report.flags.get("constant_within_budget_window"):
+        conf = lower_confidence(conf)
+    if report.flags.get("timeout_above_window"):
         conf = lower_confidence(conf)
     if probed and conf == "high":
         conf = "med"        # probed types cap confidence at medium

@@ -181,7 +181,9 @@ class FunctionReport:
     space_worst_shape: str | None = None
     ops_cls: str | None = None         # instruction-count class (scale-free
     ops_candidates: list[str] = field(default_factory=list)  # channel)
-    confidence: str = "high"
+    confidence: str | None = None   # set only when something was measured:
+                                    # a confidence on an UNDRIVABLE/TIMEOUT/
+                                    # ERROR non-measurement would be noise
     driver_params: list[str] = field(default_factory=list)
     fixed_params: dict[str, Any] = field(default_factory=dict)
     type_source: dict[str, str] = field(default_factory=dict)

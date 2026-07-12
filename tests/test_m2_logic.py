@@ -43,3 +43,43 @@ def test_single_spike_cannot_classify():
     r = fit(pts, value=lambda p: p.peak_bytes, floor=1024.0)
     assert r.cls is None
     assert "cannot classify" in r.reason
+
+
+def _aggregated(stop_reason, secs, tmo_n=None):
+    from perfmeasure.core.ladder import Budget
+    from perfmeasure.core.orchestrator import _Run, _aggregate
+    pts = [Point(n=4 * 2 ** k, seconds=s, reps=1)
+           for k, s in enumerate(secs)]
+    shape = ShapeResult(shape="random", points=pts, stop_reason=stop_reason)
+    shape.time_fit = fit(pts)
+    if tmo_n is not None:
+        shape.failures.append(
+            {"n": tmo_n, "kind": "timeout_hard", "message": "killed"})
+    report = FunctionReport(fid="f", file="f", line=1, provenance="MEASURED")
+    report.per_shape = [shape]
+    report.max_n_reached = max(p.n for p in pts)
+    _aggregate(report, _Run(shapes=[shape]), probed=False, budget=Budget())
+    return report
+
+
+def test_budget_truncated_o1_is_flagged_and_demoted():
+    flat = [2.9e-3] * 8                       # big constant, no growth seen
+    r = _aggregated("projected_cost", flat)
+    assert r.time_cls == "O(1)"
+    assert r.flags.get("constant_within_budget_window") == r.max_n_reached
+    assert r.confidence != "high"
+    # same data, but the ladder genuinely ran out of sizes: no flag
+    r2 = _aggregated("n_max", flat)
+    assert "constant_within_budget_window" not in r2.flags
+
+
+def test_timeout_defying_fit_is_flagged():
+    linear = [2e-8 * 4 * 2 ** k for k in range(14)]      # clean O(n)
+    r = _aggregated("timeout_hard", linear, tmo_n=4 * 2 ** 14)
+    assert r.flags.get("timeout_above_window") == 4 * 2 ** 14
+    # a quadratic that honestly outgrew the hard timeout predicts the
+    # kill from its own curve: no flag
+    quad = [1e-9 * (4 * 2 ** k) ** 2 for k in range(15)]  # last ~1.07s
+    r2 = _aggregated("timeout_hard", quad, tmo_n=4 * 2 ** 15)
+    assert r2.time_cls == "O(n^2)"
+    assert "timeout_above_window" not in r2.flags

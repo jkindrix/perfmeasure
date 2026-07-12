@@ -110,3 +110,26 @@ def test_per_element_verdict_needs_signal():
     # overhead-dominated everywhere: no verdict, never a guess
     pts = [(float(2 ** e), 3600.0 + 2.0 * 2 ** e) for e in range(4, 10)]
     assert per_element_verdict(pts) is None
+
+
+def test_coefficient_step_keeps_true_class():
+    # allocator-style step (8 B/elem, then 16 B/elem past a threshold):
+    # true O(n), but a single-coefficient model prefers O(n log n). The
+    # step check must keep O(n) in the candidates and say why.
+    pts = [Point(n=n, seconds=0.0, reps=1,
+                 peak_bytes=(8 if n <= 4096 else 16) * n)
+           for n in SIZES[:16]]
+    r = fit(pts, value=lambda p: p.peak_bytes, floor=MEM_FLOOR)
+    assert "O(n)" in r.candidates
+    assert "coefficient step" in r.reason
+
+
+def test_smooth_log_drift_is_not_a_step():
+    # a genuine log factor drifts smoothly — the step check must stay quiet
+    pts = [Point(n=n, seconds=0.0, reps=1,
+                 peak_bytes=int(2.0 * n * math.log2(n)))
+           for n in SIZES[:16]]
+    r = fit(pts, value=lambda p: p.peak_bytes, floor=MEM_FLOOR)
+    assert r.cls == "O(n log n)"
+    assert "O(n)" not in r.candidates
+    assert "coefficient step" not in r.reason

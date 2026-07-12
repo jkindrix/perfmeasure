@@ -76,3 +76,12 @@ def unprobeable(cfg):
 
 def passthrough(xs: list[int]) -> list[int]:
     return xs
+
+
+# --- coefficient step: allocation doubles per element past a threshold. Truth
+#     is O(n) space with a 2x scale step mid-ladder (the sort-scratch /
+#     allocator-threshold pattern); the fitter must keep O(n) in the
+#     candidates and flag the step, not promote to a clean O(n log n).
+def step_alloc(xs: list[int]) -> bytearray:
+    per = 8 if len(xs) <= 4096 else 16
+    return bytearray(per * len(xs))

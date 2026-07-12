@@ -42,6 +42,9 @@ TIE_BAND = 0.02              # log10-rmse gap treated as a tie -> simpler class
 ADEQUACY_ABS = 0.10          # a rival within 10^0.1 (~26%) typical deviation
 ADEQUACY_REL = 1.5           # ... or within 1.5x the winner's rmse, is plausible
 CONFIDENT_MARGIN = 0.08      # winner..runner-up rmse gap below this -> less sure
+FLAT_SPREAD = 1.3            # within-segment max/min for a "flat" scale run
+STEP_MIN = 1.4               # between-segment jump that reads as a real step
+STEP_NOTE = "coefficient step"
 
 
 def _fit_class(pts: list[tuple[float, float]], fn,
@@ -85,6 +88,31 @@ def _trend_corr(values: list[float]) -> float:
     vx = sum((i - mx) ** 2 for i in range(m))
     vy = sum((v - my) ** 2 for v in values)
     return cov / math.sqrt(vx * vy) if vx > 0 and vy > 0 else 0.0
+
+
+def _scale_step(pts: list[tuple[float, float]], fn,
+                overhead: float) -> tuple[float, float] | None:
+    """One coefficient step splitting two flat runs: around an allocator
+    or threshold event, the per-point scales (y-a)/f(n) of the TRUE class
+    are piecewise-constant, while a genuinely higher class drifts smoothly
+    (log2 n cannot hold two flat segments over a doubling ladder). Only
+    points whose signal dwarfs the overhead floor participate — the floor
+    correction bends small-n scales into a fake drift. Returns
+    (step_n, ratio) or None."""
+    sig = [(n, (y - overhead) / fn(n)) for n, y in pts
+           if y > 8 * overhead and fn(n) > 0]
+    if len(sig) < MIN_POINTS:
+        return None
+    for k in range(2, len(sig) - 2):        # >= 2 lo points, >= 3 tail points
+        lo = [s for _, s in sig[:k]]
+        hi = [s for _, s in sig[k:]]
+        if max(lo) / min(lo) <= FLAT_SPREAD \
+                and max(hi) / min(hi) <= FLAT_SPREAD:
+            ratio = (math.exp(sum(math.log(s) for s in hi) / len(hi))
+                     / math.exp(sum(math.log(s) for s in lo) / len(lo)))
+            if ratio >= STEP_MIN:
+                return sig[k][0], ratio
+    return None
 
 
 def monotonicity_violations(values: list[float]) -> int:
@@ -194,6 +222,24 @@ def fit(points: list[Point], value=lambda p: p.seconds,
                 and tail_best not in candidates:
             candidates.append(tail_best)
 
+    # coefficient-step check: an allocator/threshold event inside the
+    # fitted window steps the constant of the TRUE class mid-ladder, which
+    # a single-coefficient model can only absorb by promoting the class
+    # (n -> n log n soaks up a 2x step across a decade). No fixed re-fit
+    # window helps — the step can straddle any of them — so detect the
+    # step itself: the highest lower class whose scales form two flat
+    # runs split by one jump joins the candidates.
+    step_note = ""
+    order = sorted(CLASS_ORDER, key=CLASS_ORDER.__getitem__)
+    for cand in reversed(order[:order.index(winner)]):
+        hit = _scale_step(pts, dict(CLASSES)[cand], overhead)
+        if hit:
+            if cand not in candidates:
+                candidates.append(cand)
+            step_note = (f"{STEP_NOTE} ~{hit[1]:.1f}x at n~{int(hit[0])}"
+                         f" fits {cand}")
+            break
+
     # residual-trend check: the winner's residuals climbing steadily with
     # n mean the model underfits the top of the ladder — a hidden slow
     # factor (n vs n log n hides exactly here; FSE'07 reads this off the
@@ -230,6 +276,9 @@ def fit(points: list[Point], value=lambda p: p.seconds,
             candidates.append(runner_up)
 
     candidates.sort(key=CLASS_ORDER.__getitem__, reverse=True)
+    reason = "; ".join(r for r in
+                       ("close fits" if len(candidates) > 1 else "",
+                        step_note) if r)
     if len(candidates) > 1:
-        return FitResult(winner, candidates, margin, "close fits")
-    return FitResult(winner, [winner], margin)
+        return FitResult(winner, candidates, margin, reason)
+    return FitResult(winner, [winner], margin, reason)
