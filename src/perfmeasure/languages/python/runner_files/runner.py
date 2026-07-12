@@ -371,6 +371,16 @@ def _callable_for(fid):
     return fn
 
 
+def _receiver_fingerprint(fn):
+    inst = getattr(fn, "__self__", None)
+    if inst is None or not hasattr(inst, "__dict__"):
+        return None
+    try:
+        return repr(sorted(inst.__dict__.items(), key=lambda kv: kv[0]))[:4096]
+    except Exception:
+        return None
+
+
 # --- input materialization ------------------------------------------------------
 
 def _shape_list(base, shape, rng, pool_ratio=16):
@@ -567,9 +577,10 @@ def do_call(req):
     measure = req.get("measure", ["time"])
     budget_s = req.get("budget_ms", 10_000) / 1000.0
     notes = []
-    mutates = False
+    mutates = recv_mutates = False
     try:
         before = [_fingerprint(a) for a in args]
+        recv_before = _receiver_fingerprint(fn)
         warmup_seconds = None
         for i in range(req.get("warmup", 1)):
             w0 = time.perf_counter_ns()
@@ -581,9 +592,16 @@ def do_call(req):
                 warmup_seconds = (w1 - w0) / 1e9
         mutates = any(b is not None and _fingerprint(a) != b
                       for a, b in zip(args, before))
+        recv_mutates = (recv_before is not None
+                        and _receiver_fingerprint(fn) != recv_before)
         if mutates:
             notes.append("mutates_input")
             args = _materialize_all(specs)   # warmup dirtied them
+        if recv_mutates:
+            # the method mutates self: bind a FRESH instance per rep
+            # (untimed) so receiver state never accumulates across reps
+            notes.append("mutates_receiver")
+            fn = _callable_for(fid)
 
         timings, batched = [], False
         if "time" in measure:
@@ -596,7 +614,8 @@ def do_call(req):
                 del r
                 first = (t1 - t0) / 1e9
                 batch = 1
-                if first < BATCH_THRESHOLD_S and not mutates:
+                if first < BATCH_THRESHOLD_S and not mutates \
+                        and not recv_mutates:
                     batch = min(10_000, max(1, int(BATCH_TARGET_S / max(first, 1e-9))))
                     batched = True
                 timings.append(first if batch == 1 else _timed_batch(fn, args, batch))
@@ -609,6 +628,8 @@ def do_call(req):
                         break
                     if mutates:
                         args = _materialize_all(specs)  # untimed
+                    if recv_mutates:
+                        fn = _callable_for(fid)         # untimed
                     t = _timed_batch(fn, args, batch)
                     timings.append(t)
                     total += t * batch
@@ -619,6 +640,8 @@ def do_call(req):
         if "memory" in measure:
             if mutates:
                 args = _materialize_all(specs)
+            if recv_mutates:
+                fn = _callable_for(fid)
             gc.collect()
             tracemalloc.start()
             try:
@@ -641,7 +664,8 @@ def do_call(req):
             "wall_seconds": timings, "batched": batched,
             "warmup_seconds": warmup_seconds,
             "peak_alloc_bytes": peak, "ret_deepsize": ret_deepsize,
-            "mutates": mutates, "repeats_done": len(timings),
+            "mutates": mutates, "mutates_receiver": recv_mutates,
+            "repeats_done": len(timings),
             "notes": notes}
 
 

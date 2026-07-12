@@ -30,6 +30,15 @@ class NeedsArgs:
         return acc
 
 
+class Collector:
+    def __init__(self):
+        self.seen: list[int] = []
+
+    def absorb(self, xs: list[int]) -> int:
+        self.seen.extend(xs)
+        return len(self.seen)
+
+
 class Unbuildable:
     def __init__(self, conn):
         self.conn = conn

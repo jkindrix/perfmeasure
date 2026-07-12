@@ -62,7 +62,12 @@ def _arm(fn: dict) -> str:
     own: list[str] = []                      # prep expressions, tuple-ordered
     exprs: list[str] = []
     receiver = fn.get("receiver")
-    if receiver:
+    fresh_receiver = receiver and fn.get("receiver_mode") == "fresh"
+    if fresh_receiver:
+        # &mut self / consuming self: a fresh instance per rep rides the
+        # prep tuple (slot 0), so mutation never leaks between reps
+        own.append(receiver)
+    elif receiver:
         lines.append(f"            let __recv = {receiver};")
     for i, p in enumerate(fn["params"]):
         tag, style, rtype = p["spec_type"], p["style"], p["rust_type"]
@@ -124,11 +129,17 @@ def _arm(fn: dict) -> str:
                 exprs.append(f"&a{i}")
     if own:
         prep = "|| (" + ", ".join(own) + ",)"
-        head = "|__p|"
+        head = "|mut __p|" if fresh_receiver else "|__p|"
     else:
         prep = "|| ()"
         head = "|_|"
-    target = (f"__recv.{fid.rsplit('::', 1)[1]}" if receiver else fid)
+    method = fid.rsplit("::", 1)[1]
+    if fresh_receiver:
+        target = f"__p.0.{method}"
+    elif receiver:
+        target = f"__recv.{method}"
+    else:
+        target = fid
     call = (f"{head} {{ black_box({target}("
             + ", ".join(f"black_box({e})" for e in exprs) + ")); }")
     lines.append(f"            result_json(&req, run_measured(&req, "

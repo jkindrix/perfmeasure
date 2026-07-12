@@ -32,6 +32,7 @@ def _descriptor(raw: dict) -> FunctionDescriptor:
         drivable=raw.get("drivable", False),
         skip_reason=raw.get("skip_reason"),
         receiver=raw.get("receiver"),
+        receiver_mode=raw.get("receiver_mode"),
     )
 
 

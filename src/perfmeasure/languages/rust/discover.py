@@ -466,13 +466,11 @@ def _describe(node, path, crate, fid_path, module_ctx, module_pub,
 
     params = []
     receiver = None
+    receiver_mode = None
     plist = node.child_by_field_name("parameters")
     for p in plist.children if plist else []:
         if p.type == "self_parameter":
             self_text = " ".join(p.text.decode().split())
-            if self_text != "&self":
-                return skip(f"method ({self_text} receiver — mutation/"
-                            "consumption not repeatable)")
             type_name = fid_path[-1] if fid_path != module_ctx else None
             ctor = (ctors.resolve(type_name, module_ctx)
                     if type_name else None)
@@ -480,6 +478,10 @@ def _describe(node, path, crate, fid_path, module_ctx, module_pub,
                 return skip("method (self receiver; no synthesizable "
                             f"constructor for {type_name})")
             receiver = ctor
+            # &self: one shared instance; &mut self / mut self / self:
+            # a FRESH instance per rep (constructed in the untimed prep),
+            # so mutation/consumption never leaks between reps
+            receiver_mode = "shared" if self_text == "&self" else "fresh"
             continue
         if p.type != "parameter":
             continue
@@ -527,4 +529,5 @@ def _describe(node, path, crate, fid_path, module_ctx, module_pub,
                               if undrivable else None)}
     if receiver is not None:
         result["receiver"] = receiver
+        result["receiver_mode"] = receiver_mode
     return result

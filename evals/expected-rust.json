@@ -122,5 +122,21 @@
   "rs_scaled_pair_count": {
     "time": "O(n^2)",
     "expect_flag": "fixed_instance_inputs"
+  },
+  "rs_absorb": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "expect_flag": "mutates_receiver"
+  },
+  "rs_into_sum": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "expect_flag": "mutates_receiver"
   }
 }

@@ -1,75 +1,273 @@
 {
-  "first_element": {"time": "O(1)", "space": null},
-  "is_even": {"time": "O(1)", "space": null},
-  "binary_search": {"time": "O(log n)", "space": null},
-  "halving_steps": {"time": "O(log n)", "space": null},
-  "total": {"time": "O(n)", "space": "O(1)"},
-  "copy_list": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"], "space": "O(n)",
-                "note": "multi-MB memcpy is allocator/page-fault bound; same policy as rs_copy"},
-  "grow_linear": {"time": "O(n)", "space": "O(n)"},
-  "reverse_string": {"time": "O(n)", "space": "O(n)"},
-  "dict_get_all": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"], "space": null,
-                   "note": "cache-bound: random probes into a multi-MB dict scale superlinearly in wall time; one adjacent class of inflation is accepted measured truth"},
-  "sort_values": {"time": "O(n log n)", "space": "O(n)"},
-  "unique_sorted": {"time": "O(n log n)", "space": "O(n)"},
-  "insertion_sort": {"time": "O(n^2)", "space": "O(n)", "worst_shape_not": "sorted"},
-  "contains_duplicate_quadratic": {"time": "O(n^2)", "space": null},
-  "count_char_pairs": {"time": "O(n^2)", "space": null},
-  "build_prefix_lists": {"time": "O(n^2)", "space": "O(n^2)"},
-  "count_triples": {"time": "O(n^3)", "space": null},
-  "count_subsets": {"time": "O(2^n)", "space": null},
-  "fib": {"time": "O(2^n)", "space": null},
-  "untyped_mystery": {"time": "O(1)", "expect_source": {"xs": "probed"}},
-  "takes_callback": {"provenance": "UNDRIVABLE"},
-
-  "untyped_total": {"time": "O(n)", "expect_source": {"xs": "probed"}},
-  "untyped_scale": {"time": "O(n)", "expect_source": {"n": "probed"}},
-  "untyped_shout": {"time": "O(n)", "space": "O(n)",
-                    "expect_source": {"text": "probed"}},
-  "probed_pairs": {"time": "O(n^2)",
-                   "expect_source": {"a": "probed", "b": "probed"}},
-  "sort_in_place": {"time": "O(n log n)", "expect_flag": "mutates_input"},
-  "reverse_in_place": {"time": "O(n)", "expect_flag": "mutates_input"},
-  "memo_fib": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"],
-               "expect_flag": "suspected_memoization"},
-  "requires_zero": {"time": "O(n)", "expect_fixed": {"flags": 0}},
-  "needs_middle_index": {"time": "O(1)",
-                         "expect_fixed": {"i": "half_of:xs"}},
-  "unprobeable": {"provenance": "UNDRIVABLE"},
-
-  "Accumulator.scale": {"time": "O(n)", "space": "O(n)",
-                        "expect_flag": "fixed_instance_inputs"},
-  "Accumulator.pair_count": {"time": "O(n^2)"},
-  "NeedsArgs.scan_all": {"time": "O(n)",
-                         "expect_flag": "fixed_instance_inputs"},
-  "Unbuildable": {"provenance": "UNDRIVABLE",
-                  "detail_contains": "no synthesizable constructor"},
-  "apply_options": {"time": "O(n)",
-                    "expect_fixed": {"opts": "methods_and_instances:Options"},
-                    "expect_flag": "fixed_instance_inputs"},
-
-  "sum_of_digits": {"time": "O(log n)"},
-  "max_scan": {"time": "O(n)"},
-  "join_words": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"], "space": "O(n)",
-                 "note": "cache-bound: pointer-chasing over millions of scattered string objects"},
-  "zip_sum": {"time": "O(n)", "space": "O(n)"},
-  "merge_sorted": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"], "space": "O(n)",
-                   "note": "unpredictable-branch two-stream merge bends superlinear; the pre-seed-fix clean O(n) was an artifact of identical co-scaled inputs"},
-  "dedup_with_set": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"],
-                     "note": "cache-bound: random set inserts"},
-  "heapify_copy": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"]},
-  "matrix_row_sums": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"],
-                      "note": "cache-bound: pointer-chasing over scattered row objects"},
-  "intersect_sets": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"],
-                     "note": "cache-bound: random set probes"},
-  "dict_ii_lookup": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"],
-                     "note": "cache-bound: random dict probes"},
-  "range_sum": {"time": "O(n)"},
-  "sliding_window_max3": {"time": "O(n)"},
-  "repeated_membership": {"time": "O(n^2)"},
-  "dedup_quadratic": {"time": "O(n^2)"},
-  "prepend_concat": {"time": "O(n^2)"},
-  "bubble_sort": {"time": "O(n^2)"},
-  "selection_sort": {"time": "O(n^2)"},
-  "count_inversions": {"time": "O(n^2)"}
+  "first_element": {
+    "time": "O(1)",
+    "space": null
+  },
+  "is_even": {
+    "time": "O(1)",
+    "space": null
+  },
+  "binary_search": {
+    "time": "O(log n)",
+    "space": null
+  },
+  "halving_steps": {
+    "time": "O(log n)",
+    "space": null
+  },
+  "total": {
+    "time": "O(n)",
+    "space": "O(1)"
+  },
+  "copy_list": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "space": "O(n)",
+    "note": "multi-MB memcpy is allocator/page-fault bound; same policy as rs_copy"
+  },
+  "grow_linear": {
+    "time": "O(n)",
+    "space": "O(n)"
+  },
+  "reverse_string": {
+    "time": "O(n)",
+    "space": "O(n)"
+  },
+  "dict_get_all": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "space": null,
+    "note": "cache-bound: random probes into a multi-MB dict scale superlinearly in wall time; one adjacent class of inflation is accepted measured truth"
+  },
+  "sort_values": {
+    "time": "O(n log n)",
+    "space": "O(n)"
+  },
+  "unique_sorted": {
+    "time": "O(n log n)",
+    "space": "O(n)"
+  },
+  "insertion_sort": {
+    "time": "O(n^2)",
+    "space": "O(n)",
+    "worst_shape_not": "sorted"
+  },
+  "contains_duplicate_quadratic": {
+    "time": "O(n^2)",
+    "space": null
+  },
+  "count_char_pairs": {
+    "time": "O(n^2)",
+    "space": null
+  },
+  "build_prefix_lists": {
+    "time": "O(n^2)",
+    "space": "O(n^2)"
+  },
+  "count_triples": {
+    "time": "O(n^3)",
+    "space": null
+  },
+  "count_subsets": {
+    "time": "O(2^n)",
+    "space": null
+  },
+  "fib": {
+    "time": "O(2^n)",
+    "space": null
+  },
+  "untyped_mystery": {
+    "time": "O(1)",
+    "expect_source": {
+      "xs": "probed"
+    }
+  },
+  "takes_callback": {
+    "provenance": "UNDRIVABLE"
+  },
+  "untyped_total": {
+    "time": "O(n)",
+    "expect_source": {
+      "xs": "probed"
+    }
+  },
+  "untyped_scale": {
+    "time": "O(n)",
+    "expect_source": {
+      "n": "probed"
+    }
+  },
+  "untyped_shout": {
+    "time": "O(n)",
+    "space": "O(n)",
+    "expect_source": {
+      "text": "probed"
+    }
+  },
+  "probed_pairs": {
+    "time": "O(n^2)",
+    "expect_source": {
+      "a": "probed",
+      "b": "probed"
+    }
+  },
+  "sort_in_place": {
+    "time": "O(n log n)",
+    "expect_flag": "mutates_input"
+  },
+  "reverse_in_place": {
+    "time": "O(n)",
+    "expect_flag": "mutates_input"
+  },
+  "memo_fib": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "expect_flag": "suspected_memoization"
+  },
+  "requires_zero": {
+    "time": "O(n)",
+    "expect_fixed": {
+      "flags": 0
+    }
+  },
+  "needs_middle_index": {
+    "time": "O(1)",
+    "expect_fixed": {
+      "i": "half_of:xs"
+    }
+  },
+  "unprobeable": {
+    "provenance": "UNDRIVABLE"
+  },
+  "Accumulator.scale": {
+    "time": "O(n)",
+    "space": "O(n)",
+    "expect_flag": "fixed_instance_inputs"
+  },
+  "Accumulator.pair_count": {
+    "time": "O(n^2)"
+  },
+  "NeedsArgs.scan_all": {
+    "time": "O(n)",
+    "expect_flag": "fixed_instance_inputs"
+  },
+  "Unbuildable": {
+    "provenance": "UNDRIVABLE",
+    "detail_contains": "no synthesizable constructor"
+  },
+  "apply_options": {
+    "time": "O(n)",
+    "expect_fixed": {
+      "opts": "methods_and_instances:Options"
+    },
+    "expect_flag": "fixed_instance_inputs"
+  },
+  "sum_of_digits": {
+    "time": "O(log n)"
+  },
+  "max_scan": {
+    "time": "O(n)"
+  },
+  "join_words": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "space": "O(n)",
+    "note": "cache-bound: pointer-chasing over millions of scattered string objects"
+  },
+  "zip_sum": {
+    "time": "O(n)",
+    "space": "O(n)"
+  },
+  "merge_sorted": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "space": "O(n)",
+    "note": "unpredictable-branch two-stream merge bends superlinear; the pre-seed-fix clean O(n) was an artifact of identical co-scaled inputs"
+  },
+  "dedup_with_set": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "note": "cache-bound: random set inserts"
+  },
+  "heapify_copy": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ]
+  },
+  "matrix_row_sums": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "note": "cache-bound: pointer-chasing over scattered row objects"
+  },
+  "intersect_sets": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "note": "cache-bound: random set probes"
+  },
+  "dict_ii_lookup": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "note": "cache-bound: random dict probes"
+  },
+  "range_sum": {
+    "time": "O(n)"
+  },
+  "sliding_window_max3": {
+    "time": "O(n)"
+  },
+  "repeated_membership": {
+    "time": "O(n^2)"
+  },
+  "dedup_quadratic": {
+    "time": "O(n^2)"
+  },
+  "prepend_concat": {
+    "time": "O(n^2)"
+  },
+  "bubble_sort": {
+    "time": "O(n^2)"
+  },
+  "selection_sort": {
+    "time": "O(n^2)"
+  },
+  "count_inversions": {
+    "time": "O(n^2)"
+  },
+  "Collector.absorb": {
+    "time": "O(n)",
+    "time_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "expect_flag": "mutates_receiver"
+  }
 }

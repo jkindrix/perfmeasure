@@ -40,6 +40,7 @@ class _Run:
     mutates: bool = False
     first_probe_timeout: bool = False
     shapes_skipped: int = 0          # deadline hit before these shapes ran
+    recv_mutates: bool = False       # method mutated self; fresh bind per rep
     rejected: str | None = None      # exception message at the first size
 
 
@@ -72,7 +73,8 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
     report.driver_params = drive.driver_params
     report.fixed_params = drive.fixed_params
     if desc.receiver:
-        report.fixed_params["self"] = desc.receiver
+        report.fixed_params["self"] = desc.receiver + (
+            " (fresh per rep)" if desc.receiver_mode == "fresh" else "")
     if desc.receiver or any(p.spec_type == "instance_" for p in desc.params):
         # measured against default-constructed instances: cost that depends
         # on instance state is invisible at this fixed point
@@ -92,6 +94,8 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
         "capabilities", {}).get("memory") or "unknown"
     if run.mutates:
         report.flags["mutates_input"] = True
+    if run.recv_mutates or desc.receiver_mode == "fresh":
+        report.flags["mutates_receiver"] = True
 
     if run.rejected is not None:
         report.provenance = UNDRIVABLE
@@ -166,6 +170,8 @@ def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
                 run.spread_flags += 1
             if resp.get("mutates"):
                 run.mutates = True
+            if resp.get("mutates_receiver"):
+                run.recv_mutates = True
             result.points.append(Point(
                 n=n, seconds=min(timings) if timings else 0.0,
                 reps=resp["repeats_done"],

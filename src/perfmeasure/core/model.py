@@ -106,6 +106,7 @@ class FunctionDescriptor:
     drivable: bool
     skip_reason: str | None = None
     receiver: str | None = None   # methods: constructor ref for the instance
+    receiver_mode: str | None = None  # "shared" (&self) | "fresh" (mut/consuming)
 
 
 @dataclass

@@ -95,13 +95,16 @@ def test_receiver_methods_on_constructible_types():
     # unit struct: constructible by name
     wr = fns["with_receiver"]
     assert wr["drivable"] is True and wr["receiver"] == "tiny_crate::Codec"
-    # derive(Default)
+    # derive(Default): &self shares one instance
     sc = fns["scale"]
     assert sc["drivable"] is True
     assert sc["receiver"] == "tiny_crate::Scaler::default()"
-    # consuming / &mut receivers stay out, with reasons
-    assert "not repeatable" in fns["consume"]["skip_reason"]
-    assert "not repeatable" in fns["tweak"]["skip_reason"]
+    assert sc["receiver_mode"] == "shared"
+    # consuming / &mut receivers get a FRESH instance per rep
+    assert fns["consume"]["drivable"] is True
+    assert fns["consume"]["receiver_mode"] == "fresh"
+    assert fns["tweak"]["drivable"] is True
+    assert fns["tweak"]["receiver_mode"] == "fresh"
     # no synthesizable constructor (pub field only, no new())
     assert "no synthesizable constructor" in fns["method"]["skip_reason"]
 

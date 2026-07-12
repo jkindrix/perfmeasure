@@ -117,13 +117,17 @@ projects is tracked separately as a regression metric
   nested types). The constructor expression is named in the record,
   results are flagged `fixed_instance_inputs` and capped at medium
   confidence, because cost that depends on instance state is invisible
-  at that fixed point. `&mut self`/consuming receivers and types whose
+  at that fixed point. `&mut self` and consuming receivers get a **fresh
+  instance per rep** (constructed untimed) so mutation never leaks
+  between reps — flagged `mutates_receiver`; Python detects receiver
+  mutation at runtime by fingerprinting and does the same. Types whose
   constructors need unsynthesizable values stay `UNDRIVABLE`, naming
   the type.
-- **Rust v1 reaches public, non-generic, non-`&mut` functions of library
-  crates** — every skip carries its reason, and the scan summary counts
-  them. Type aliases stay undrivable by design (resolving them is the
-  semantic-model trap this architecture refuses).
+- **Rust reaches public, non-generic functions and methods of library
+  crates** (`&mut` *parameters* remain skipped) — every skip carries its
+  reason, and the scan summary counts them. Type aliases stay undrivable
+  by design (resolving them is the semantic-model trap this architecture
+  refuses).
 - Adding a language = writing a runner that speaks the JSON-stdio
   protocol (abstract input specs in, seconds + peak bytes out) — the
   core never learns language semantics.

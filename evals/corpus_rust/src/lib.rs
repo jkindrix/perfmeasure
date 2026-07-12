@@ -166,6 +166,24 @@ impl RsScaler {
     }
 }
 
+#[derive(Default)]
+pub struct RsAccum {
+    total: i64,
+}
+
+impl RsAccum {
+    pub fn rs_absorb(&mut self, xs: &[i64]) -> i64 {
+        for x in xs {
+            self.total = self.total.wrapping_add(*x);
+        }
+        self.total
+    }
+
+    pub fn rs_into_sum(self, xs: &[i64]) -> i64 {
+        xs.iter().sum::<i64>().wrapping_add(self.total)
+    }
+}
+
 pub struct RsOpts {
     pub strict: bool,
 }
