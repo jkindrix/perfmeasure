@@ -51,9 +51,10 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
         environment={"runtime": session.hello.get("runtime", "?")},
     )
     started = time.perf_counter()
+    deadline = started + budget.per_function_s
+    hard_wall = deadline + budget.rescue_s
 
-    probed, probe_fail = probing.probe(
-        session, desc, deadline_left=budget.per_function_s)
+    probed, probe_fail = probing.probe(session, desc, deadline=deadline)
     if probe_fail:
         report.provenance = UNDRIVABLE
         report.provenance_detail = probe_fail
@@ -66,7 +67,7 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
             report.provenance = UNDRIVABLE
             report.provenance_detail = reason
             return report
-        run = _run_ladders(session, desc, drive, budget)
+        run = _run_ladders(session, desc, drive, budget, deadline, hard_wall)
         if run.rejected is None or not drive.fixed_params:
             break
 
@@ -108,15 +109,15 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
 
 
 def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
-                 drive: DrivePlan, budget: Budget) -> _Run:
+                 drive: DrivePlan, budget: Budget, deadline: float,
+                 hard_wall: float) -> _Run:
     run = _Run()
     int_only = all(p.spec_type == "int_mag" for p in desc.params
                    if p.name in drive.driver_params)
     n0 = N0_INT if int_only else N0_COLLECTION
     n_max = INT_N_MAX if int_only else N_MAX
-    started = time.perf_counter()
     for i, shape in enumerate(drive.shapes):
-        remaining = budget.per_function_s - (time.perf_counter() - started)
+        remaining = deadline - time.perf_counter()
         if remaining <= 0.05:
             # deadline: --budget is a promise, not a suggestion; skipped
             # shapes are counted, never silently absorbed by a floor
@@ -126,26 +127,45 @@ def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
         ladder = ShapeLadder(n0=n0, budget_s=shape_budget, n_max=n_max,
                              per_call_soft_s=budget.per_call_soft_s)
         result = ShapeResult(shape=shape, points=[])
-        size_idx = 0
         while (n := ladder.next_size()) is not None:
+            now = time.perf_counter()
+            if now >= hard_wall or (now >= deadline
+                                    and not ladder._backfilling):
+                result.stop_reason = result.stop_reason or "deadline"
+                break
             specs = [s.wire() for s in drive.specs(shape, n)]
-            # memory is near-deterministic: tracing every other size halves
-            # the tracing overhead at the expensive top of the ladder while
-            # keeping >= MIN_POINTS memory points on any fittable ladder
-            measure = ["time", "memory"] if size_idx % 2 == 0 else ["time"]
-            size_idx += 1
-            deadline_left = budget.per_function_s - (
-                time.perf_counter() - started)
+            # memory needs >= MIN_POINTS observations even on a minimal
+            # five-point ladder, so the first five SUCCESSFUL points are
+            # always traced (failed attempts don't consume slots); after
+            # that, alternating halves the tracing overhead at the
+            # expensive top with no fit-quality loss
+            npts = len(result.points)
+            # first five successful points always trace memory (the
+            # fitter's minimum), alternating after. Rescue calls measure
+            # TIME ONLY and run lean: the rescue window affords exactly
+            # one timed call on a function steep enough to have needed
+            # rescuing — its space, if unaffordable, stays honestly
+            # unmeasured rather than costing the time fit
+            if ladder._backfilling:
+                measure = ["time"]
+                lean = {"warmup": 0, "max_repeats": 2, "min_total_ms": 0}
+            else:
+                measure = (["time", "memory"] if npts < 5 or npts % 2 == 1
+                           else ["time"])
+                lean = {}
             msg = protocol.call_msg(
                 session.next_id(), desc.fid, specs,
-                measure=measure,
+                measure=measure, **lean,
                 budget_ms=int(min(shape_budget, budget.hard_timeout_s) * 1000))
             t0 = time.perf_counter()
-            # one monotonic deadline governs requests too: never wait longer
-            # than the remaining budget plus one bounded rescue window
+            # budget is a promise; rescue_s is the only sanctioned overrun.
+            # NORMAL calls may wait only until the deadline — the rescue
+            # window is reserved for backfill, so killing a hang can never
+            # consume the very window that salvages the fit afterwards
+            wall = hard_wall if ladder._backfilling else deadline
             resp = session.request(msg, timeout=min(
                 budget.hard_timeout_s,
-                max(1.0, deadline_left + 2 * budget.per_call_soft_s)))
+                max(0.25, wall - time.perf_counter())))
             ladder.charge(time.perf_counter() - t0)
             if resp["op"] == "error":
                 result.failures.append(

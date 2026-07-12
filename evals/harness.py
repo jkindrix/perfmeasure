@@ -41,6 +41,9 @@ def main() -> int:
     parser.add_argument("--budget", type=float, default=4.0)
     parser.add_argument("--only")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--update-readme", action="store_true",
+                        help="write the accuracy paragraph into README.md "
+                             "between the gate markers (kills figure drift)")
     args = parser.parse_args()
 
     t0 = time.time()
@@ -116,7 +119,9 @@ def main() -> int:
                 f"{': ' + (r.provenance_detail or '') if r.provenance_detail else ''})")
         if exp.get("space"):
             space_total += 1
-            s_ok = r.space_cls == exp["space"] or exp["space"] in r.space_candidates
+            s_accepted = exp.get("space_any", [exp["space"]])
+            s_ok = (r.space_cls in s_accepted
+                    or exp["space"] in r.space_candidates)
             space_ok += s_ok
             verdicts.append("ok" if s_ok else "FAIL")
             if not s_ok:
@@ -157,13 +162,36 @@ def main() -> int:
         print(f"space: {space_ok}/{space_total} pass")
     if undrv_total:
         print(f"undrivable recall: {undrv_ok}/{undrv_total}")
-    print(f"wall: {time.time() - t0:.0f}s")
+    wall = time.time() - t0
+    print(f"wall: {wall:.0f}s")
     if failures:
         print("\nFAILURES:")
         for f in failures:
             print(f"  - {f}")
         return 1
+    if args.update_readme:
+        _update_readme(ambig_ok, time_total, exact,
+                       sum(widths) / max(1, len(widths)),
+                       space_ok, space_total, undrv_ok, undrv_total, wall)
     return 0
+
+
+def _update_readme(t_ok, t_total, exact, width, s_ok, s_total,
+                   u_ok, u_total, wall):
+    """README figures are GENERATED, never hand-written — hand-written
+    ones went stale twice."""
+    para = (f"Current run: **{t_ok}/{t_total} time classes** ({exact} exact, "
+            f"rest ambiguous-containing-truth, mean ambiguity width "
+            f"{width:.2f}), **{s_ok}/{s_total} space classes**, "
+            f"**{u_ok}/{u_total} undrivable recall** — full gate in "
+            f"~{wall:.0f} s.")
+    readme = Path(__file__).resolve().parents[1] / "README.md"
+    text = readme.read_text()
+    begin = text.index("<!-- gate:begin")
+    begin = text.index("\n", begin) + 1
+    end = text.index("<!-- gate:end -->")
+    readme.write_text(text[:begin] + para + "\n" + text[end:])
+    print(f"README gate figures updated: {para}")
 
 
 if __name__ == "__main__":

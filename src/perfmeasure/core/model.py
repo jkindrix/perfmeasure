@@ -11,7 +11,10 @@ import platform
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-TOOL_VERSION = "0.2.0"
+TOOL_VERSION = "0.3.0"
+# bumped whenever generator streams or the measurement schedule change:
+# a JSON record is only input-reproducible against the same generator_rev
+GENERATOR_REV = 2
 
 # --- complexity classes, ordered by growth ---------------------------------
 
@@ -221,6 +224,7 @@ class FunctionReport:
             "flags": self.flags,
             "environment": {**self.environment,
                             "tool_version": TOOL_VERSION,
+                            "generator_rev": GENERATOR_REV,
                             "platform": platform.platform()},
         }
 

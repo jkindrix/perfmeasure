@@ -1,6 +1,6 @@
 [project]
 name = "perfmeasure"
-version = "0.2.0"
+version = "0.3.0"
 description = "Empirical complexity measurement: runs functions at growing input sizes and curve-fits time and space to Big-O classes"
 requires-python = ">=3.10"
 dependencies = [
@@ -12,7 +12,7 @@ dependencies = [
 perfmeasure = "perfmeasure.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.6"]
 
 [build-system]
 requires = ["hatchling"]

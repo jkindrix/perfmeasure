@@ -372,6 +372,10 @@ def _callable_for(fid):
 
 
 def _receiver_fingerprint(fn):
+    """SAMPLED, best-effort mutation detection (like input fingerprinting):
+    a truncated repr of __dict__. Slot-only objects, state held outside
+    __dict__, and deep mutations beyond the sampled prefix can evade it —
+    such methods are measured as if non-mutating."""
     inst = getattr(fn, "__self__", None)
     if inst is None or not hasattr(inst, "__dict__"):
         return None

@@ -15,6 +15,16 @@ omitted.
 > additionally requires a Unix platform (the harness uses fd-level
 > stream redirection).
 
+## Installation
+
+```sh
+uv tool install /path/to/perf-lint      # or: pipx install / pip install .
+```
+
+Requires Python ≥ 3.10 on a Unix platform; Rust measurement additionally
+needs a `cargo` toolchain. Nothing is ever installed into target
+environments.
+
 ```sh
 perfmeasure fn path/to/file.py::function     # measure one Python function
 perfmeasure fn path/to/crate::module::func   # measure one Rust pub fn
@@ -80,11 +90,12 @@ The tool is itself evaluated against a ground-truth corpus of
 known-complexity functions (`python evals/harness.py`) spanning Python
 and Rust, O(1) through O(2ⁿ) — typed, unhinted (probing), mutating,
 memoized, cache-bound, panicking, methods, constructed instances, and
-undrivable-by-design. Current run: **70/70 time classes** (46 exact,
-rest ambiguous-containing-truth, mean ambiguity width 1.36), **18/18
-space classes**, **7/7 undrivable recall** — full gate in ~200 s. Drivability on real
-projects is tracked separately as a regression metric
-(`python evals/wild.py`).
+undrivable-by-design.
+<!-- gate:begin (written by `python evals/harness.py --update-readme`; do not edit) -->
+Current run: **73/73 time classes** (48 exact, rest ambiguous-containing-truth, mean ambiguity width 1.34), **20/20 space classes**, **7/7 undrivable recall** — full gate in ~177 s.
+<!-- gate:end -->
+Drivability on real projects is tracked separately as a regression
+metric (`python evals/wild.py`).
 
 ## Honest limits
 

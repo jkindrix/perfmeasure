@@ -114,11 +114,13 @@ def main(argv: list[str] | None = None) -> int:
                                    "or all drivable functions in FILE.py")
     fn.add_argument("target")
     fn.add_argument("--budget", type=float, default=30.0,
-                    help="wall-clock seconds per function (default 30)")
+                    help="deadline in seconds per function (default 30); "
+                         "wall time never exceeds budget + --rescue")
     scan_p = sub.add_parser("scan", help="measure every function under DIR")
     scan_p.add_argument("target")
     scan_p.add_argument("--budget", type=float, default=10.0,
-                        help="wall-clock seconds per function (default 10)")
+                        help="deadline in seconds per function (default 10); "
+                             "wall time never exceeds budget + --rescue")
     scan_p.add_argument("--exclude", action="append", default=[],
                         help="glob/substring to skip (repeatable)")
     for p in (fn, scan_p):
@@ -128,9 +130,12 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--features",
                        help="cargo features for the Rust harness "
                             "(comma-separated)")
+        p.add_argument("--rescue", type=float, default=4.0,
+                       help="bounded overrun window past the deadline to "
+                            "kill a hang and salvage the fit (default 4)")
     args = parser.parse_args(argv)
 
-    budget = Budget(per_function_s=args.budget)
+    budget = Budget(per_function_s=args.budget, rescue_s=args.rescue)
     features = args.features.split(",") if args.features else None
     try:
         if args.command == "fn":

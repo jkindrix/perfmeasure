@@ -27,10 +27,15 @@ MIN_POINTS_TARGET = 5
 
 @dataclass
 class Budget:
+    """per_function_s is a monotonic deadline shared by probing, ladders,
+    requests, and shape scheduling. rescue_s is the ONLY sanctioned
+    overrun: a bounded window past the deadline in which a hang can be
+    killed and a steep ladder backfilled. Wall time never exceeds
+    per_function_s + rescue_s (plus process overhead)."""
     per_function_s: float = 30.0
     per_call_soft_s: float = 1.0
     hard_timeout_s: float = 10.0
-    memory_reserve_frac: float = 0.25
+    rescue_s: float = 4.0
 
 
 @dataclass

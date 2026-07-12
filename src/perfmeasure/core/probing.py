@@ -13,6 +13,7 @@ meaningful, so the generator spec is published for audit.
 from __future__ import annotations
 
 import re
+import time
 
 from perfmeasure import protocol
 from perfmeasure.core.model import FunctionDescriptor, GenSpec
@@ -43,10 +44,11 @@ def candidates_for(param_name: str) -> list[str]:
 
 
 def probe(session: RunnerSession, desc: FunctionDescriptor,
-          deadline_left: float | None = None) -> tuple[bool, str | None]:
+          deadline: float | None = None) -> tuple[bool, str | None]:
     """Resolve unhinted params in place. Returns (any_probed, fail_reason).
-    Probe timeouts are capped by the caller's remaining budget so probing
-    can never blow the function deadline on its own."""
+    `deadline` is an absolute perf_counter timestamp shared with the rest
+    of the measurement: each probe's timeout is recomputed from it, so
+    probing can never blow the function deadline on its own."""
     unhinted = [p for p in desc.params
                 if not p.omitted and p.spec_type is None
                 and p.detail == "missing annotation"]
@@ -57,15 +59,12 @@ def probe(session: RunnerSession, desc: FunctionDescriptor,
            and p.detail != "missing annotation" for p in desc.params):
         return False, None
 
-    timeout = PROBE_TIMEOUT_S
-    if deadline_left is not None:
-        timeout = max(0.5, min(PROBE_TIMEOUT_S, deadline_left / 2))
     resolved: dict[str, str] = {p.name: p.spec_type for p in desc.params
                                 if p.spec_type}
     for target in unhinted:
         last_error = "no candidates"
         for tag in candidates_for(target.name):
-            if _accepts(session, desc, resolved, target.name, tag, timeout):
+            if _accepts(session, desc, resolved, target.name, tag, deadline):
                 resolved[target.name] = tag
                 target.spec_type = tag
                 target.detail = "probed"
@@ -84,8 +83,12 @@ def probe(session: RunnerSession, desc: FunctionDescriptor,
 
 
 def _accepts(session, desc, resolved, target_name, target_tag,
-             timeout=PROBE_TIMEOUT_S) -> bool:
+             deadline=None) -> bool:
     for size in PROBE_SIZES:
+        timeout = PROBE_TIMEOUT_S
+        if deadline is not None:
+            timeout = max(0.25, min(PROBE_TIMEOUT_S,
+                                    deadline - time.perf_counter()))
         specs = []
         for p in desc.params:
             if p.omitted:

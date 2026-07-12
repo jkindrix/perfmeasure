@@ -26,6 +26,28 @@ def test_budget_is_a_deadline():
     assert reports[0].provenance in ("MEASURED", "AMBIGUOUS")
 
 
+def test_deadline_is_hard_even_against_slow_calls():
+    """budget + rescue is the absolute wall; a function whose every call
+    sleeps must not stretch it (the old formula floored request timeouts
+    at 1s + 2s grace regardless of a tiny budget)."""
+    budget = Budget(per_function_s=0.2, rescue_s=0.5)
+    t0 = time.perf_counter()
+    measure_target(str(FIXTURES / "sample_target.py"), "slow_sleeper", budget)
+    wall = time.perf_counter() - t0
+    # generous process overhead allowance; the pre-fix behavior was >2s
+    # of request timeout alone on a 0.06s budget
+    assert wall < 0.2 + 0.5 + 1.2, f"hard wall breached: {wall:.2f}s"
+
+
+def test_memory_traced_on_first_five_sizes():
+    reports, _ = measure_target(str(FIXTURES / "sample_target.py"), "linear",
+                                Budget(per_function_s=1.5))
+    shape = reports[0].per_shape[0]
+    first5 = shape.points[:5]
+    assert all(p.peak_bytes is not None for p in first5), \
+        "the fitter needs >= 5 memory points; the first five sizes must trace"
+
+
 def test_cargo_runs_even_when_binary_exists(tmp_path, monkeypatch):
     calls = []
 

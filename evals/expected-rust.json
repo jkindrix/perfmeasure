@@ -56,7 +56,12 @@
   },
   "rs_sort_copy": {
     "time": "O(n log n)",
-    "space": "O(n)"
+    "space": "O(n)",
+    "space_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "note": "allocator peak (merge buffer + vec growth) bends adjacent-class, like the time-side cache policy"
   },
   "rs_sort_unstable_copy": {
     "time": "O(n log n)",
@@ -73,7 +78,8 @@
     "worst_shape_not": "sorted"
   },
   "rs_triple_count": {
-    "time": "O(n^3)"
+    "time": "O(n^3)",
+    "space": "O(1)"
   },
   "rs_fib": {
     "time": "O(2^n)"

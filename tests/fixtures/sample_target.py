@@ -16,3 +16,9 @@ def untyped(xs):
 def prints_to_stdout(xs: list[int]) -> int:
     print("target noise on stdout")
     return len(xs)
+
+
+def slow_sleeper(xs: list[int]) -> int:
+    import time
+    time.sleep(0.3)
+    return len(xs)

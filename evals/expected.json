@@ -72,7 +72,7 @@
   },
   "count_triples": {
     "time": "O(n^3)",
-    "space": null
+    "space": "O(1)"
   },
   "count_subsets": {
     "time": "O(2^n)",

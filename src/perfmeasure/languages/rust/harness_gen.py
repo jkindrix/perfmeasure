@@ -188,6 +188,7 @@ def _prune_cache(keep: Path) -> None:
         try:
             for old in root.parent.glob("[0-9a-f]" * 16):   # pre-v2 layout
                 shutil.rmtree(old, ignore_errors=True)
+            import time as _time
             entries = sorted(
                 (d for d in root.iterdir() if d.is_dir() and d != keep),
                 key=lambda d: d.stat().st_mtime, reverse=True)
@@ -196,6 +197,11 @@ def _prune_cache(keep: Path) -> None:
                 MAX_CACHE_BYTES
             for i, d in enumerate(entries):
                 total += _dir_bytes(d)
+                # entries touched in the last hour may belong to a live
+                # concurrent run — never prune those (the flock only
+                # serializes pruners, not builders/runners)
+                if _time.time() - d.stat().st_mtime < 3600:
+                    continue
                 if i >= MAX_CACHE_ENTRIES - 1 or total > budget:
                     shutil.rmtree(d, ignore_errors=True)
         finally:
@@ -252,6 +258,8 @@ def build_harness(crate_root: Path, crate: str, functions: list[dict],
         if proc.returncode == 0:
             dropped_file.write_text(json.dumps(
                 {"source_hash": source_hash, "dropped": sorted(all_dropped)}))
+            import os
+            os.utime(harness)   # true last-use, so pruning approximates LRU
             return binary
         bad_fids = _failing_arms(proc.stdout, main_rs)
         if not bad_fids or attempt == 1:
