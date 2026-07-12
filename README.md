@@ -24,7 +24,12 @@ uv tool install git+https://github.com/jkindrix/perfmeasure
 
 Requires Python ≥ 3.10 on a Unix platform; Rust measurement additionally
 needs a `cargo` toolchain. Nothing is ever installed into target
-environments.
+environments. Target projects may run their own interpreter (`--python`,
+`$VIRTUAL_ENV`, `.venv/`) down to **Python 3.9** — the runner needs
+`tracemalloc.reset_peak` and `random.randbytes` (both 3.9), verified by
+driving a 3.9 target end-to-end; on older targets measurement fails
+honestly (the AttributeError lands in the per-shape failure records)
+rather than silently.
 
 ```sh
 perfmeasure fn path/to/file.py::function     # measure one Python function
@@ -107,10 +112,14 @@ and Rust, O(1) through O(2ⁿ) — typed, unhinted (probing), mutating,
 memoized, cache-bound, panicking, methods, constructed instances, and
 undrivable-by-design.
 <!-- gate:begin (written by `python evals/harness.py --update-readme`; do not edit) -->
-Current run: **92/92 time classes** (78 exact, rest ambiguous-containing-truth, mean ambiguity width 1.64), **28/28 space classes**, **10/10 undrivable recall** — full gate in ~180 s.
+Current run: **93/93 time classes** (82 exact, rest ambiguous-containing-truth, mean ambiguity width 1.62), **29/29 space classes**, **10/10 undrivable recall** — full gate in ~180 s.
 <!-- gate:end -->
+One honest caveat: the fitter's thresholds are calibrated against this
+same corpus, so the gate measures fit-to-corpus plus regression teeth,
+not held-out generalization — there is no independent accuracy proof.
 Drivability on real projects is tracked separately as a regression
-metric (`python evals/wild.py`).
+metric (`python evals/wild.py`); wild functions have no ground-truth
+classes, so that sweep checks drivability, not accuracy.
 
 ## Honest limits
 
@@ -120,7 +129,8 @@ metric (`python evals/wild.py`).
 - **n vs n log n is often AMBIGUOUS in wall time** at practical sizes —
   by design; reporting both beats false precision. The **instructions
   channel** (Linux, Python targets: retired-instruction counts via
-  perf_event, <1% variance) resolves most of these: a clean instruction
+  perf_event, <2% worst-point run-to-run variance measured) resolves
+  most of these: a clean instruction
   fit one class below the wall headline becomes the headline
   (`wall_cache_inflated` names the wall reading, which stays in the
   candidate set). No perf access (containers with
@@ -140,7 +150,19 @@ metric (`python evals/wild.py`).
 - **Compiled code bends harder.** Rust has no interpreter cushion, so
   cache-hierarchy transitions in memory-bound linear code read up to one
   class high; a tail-of-ladder cross-check reports the stabilized
-  asymptote as a candidate.
+  asymptote as a candidate. Allocator threshold events (a sort's scratch
+  buffer, a `Vec` growth policy) step the constant mid-ladder instead of
+  bending it — detected as two flat per-element runs split by one jump
+  (`coefficient_step_suspected`), which keeps the true class in the
+  candidates and demotes confidence.
+- **Budget truncation is named.** A time-O(1) verdict whose every ladder
+  was stopped by the budget — never by the size ceiling or the data —
+  is flagged `constant_within_budget_window` with the window's max n on
+  the headline line: a large constant can mask a term that had no room
+  to emerge. Likewise a hard timeout just past the fitted window that
+  the fitted class cannot explain (20x+ single-call overrun against its
+  own extrapolation) is flagged `timeout_above_window` — evidence of a
+  steeper regime beyond the window, not proof.
 - **Probed types are educated guesses.** A function tolerating a
   `list[int]` doesn't prove the measurement is semantically meaningful;
   probed results are capped at medium confidence and the generator spec
@@ -198,11 +220,17 @@ Empirical complexity inference is not new: [pberkes/big_O](https://github.com/pb
 (Python, time only), [plasma-umass/bigO](https://github.com/plasma-umass/bigO)
 (Python, time+space, passively observes whatever inputs your program
 happens to run), Meta's [BigO(Bench)](https://facebookresearch.github.io/BigOBench/)
-(benchmark infrastructure around competitive-programming tasks), and
-Google Benchmark's `.Complexity()` (C++, time only) all fit classes to
-measurements. What none of them offer, and perfmeasure does, is the
-combination: **active** shape-controlled doubling ladders with
-worst-across-tested-shapes reporting, time **and** space, explicit
-AMBIGUOUS sets with provenance and confidence on every answer, and both
-Python and Rust from one tool — the generated instrumented-`--release`
-Rust harness with complexity inference has no peer we know of.
+(Python: its dynamic framework actively scales inputs and fits both
+time and space classes — built to benchmark LLMs on
+competitive-programming tasks, not to point at your codebase),
+[zertyz/big-O](https://github.com/zertyz/big-O) (Rust, time+space via a
+counting allocator, asserted inside hand-written `big-o-test` tests),
+and Google Benchmark's `.Complexity()` (C++, time only) all fit classes
+to measurements. What none of them offer, and perfmeasure does, is the
+combination: **discovery** (point it at a file, crate, or tree — no
+per-function test or benchmark to write), shape-controlled doubling
+ladders with worst-across-tested-shapes reporting, time **and** space,
+explicit AMBIGUOUS sets with provenance and confidence on every answer,
+and both Python and Rust from one tool — the generated
+instrumented-`--release` Rust harness that mirrors the target
+workspace's own release profile has no peer we know of.

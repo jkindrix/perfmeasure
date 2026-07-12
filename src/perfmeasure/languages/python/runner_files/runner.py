@@ -46,7 +46,8 @@ INNER_LIST_LEN = 16
 
 
 # --- instruction counting (perf_event, Linux) ---------------------------------
-# Retired-instruction counts are near-deterministic (<1% variance), so the
+# Retired-instruction counts are near-deterministic (<2% worst-point
+# run-to-run variance measured), so the
 # n-vs-n·log·n curvature that cache-bent wall time cannot separate is
 # plainly visible in this channel. Best-effort: any failure (paranoid
 # sysctl, container, non-Linux) just disables the capability.

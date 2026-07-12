@@ -81,9 +81,11 @@ def main() -> int:
     baseline = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
     results: dict[str, dict] = {}
     failures = []
+    skipped = 0
     for target in TARGETS:
         r = scan_one(target, args.budget)
         if r is None:
+            skipped += 1
             continue
         name = target["path"]
         results[name] = r
@@ -99,6 +101,17 @@ def main() -> int:
         if fresh:
             print(f"  new undrivable reasons vs baseline: "
                   f"{fresh} — candidate whitelist/feature work")
+
+    # a skipped target is a hole in the gate, not a pass: say so on stdout,
+    # and zero checked targets is a failure — a vacuous green is the one
+    # result this gate must never produce
+    print(f"# wild gate: {len(results)}/{len(TARGETS)} targets present"
+          + (f" ({skipped} missing on this machine — gate is PARTIAL)"
+             if skipped else ""))
+    if not results:
+        print("error: no wild targets exist on this machine — "
+              "nothing was checked", file=sys.stderr)
+        return 1
 
     if args.update:
         BASELINE.write_text(json.dumps(results, indent=2) + "\n")

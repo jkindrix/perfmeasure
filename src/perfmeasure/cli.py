@@ -1,10 +1,13 @@
 """perfmeasure CLI.
 
-  perfmeasure fn path/to/file.py::qualname     measure one function
-  perfmeasure fn path/to/file.py               measure every drivable
-                                               function in the file
-Options: --json, --budget SECONDS, --python PATH, --verbose
-(`perfmeasure scan DIR` arrives in M2.)
+  perfmeasure fn FILE.py::qualname | CRATE::mod::fn   measure one function
+  perfmeasure fn FILE.py                        every drivable fn in a file
+  perfmeasure scan DIR|CRATE                    whole tree + coverage summary
+  perfmeasure diff DIR --baseline B.json        exit 1 on class regression
+
+Options: --json, --budget SECONDS, --rescue SECONDS, --verbose,
+--python PATH (Python targets), --features LIST (Rust targets),
+--exclude GLOB (scan/diff).
 """
 from __future__ import annotations
 
@@ -43,7 +46,13 @@ def measure_target(file: str, qualname: str | None, budget: Budget,
     """API entry: measure one function (or all drivable in a file).
     Returns (reports, interpreter_note)."""
     if file.endswith(".rs") or (Path(file) / "Cargo.toml").exists():
+        if python:
+            print("warning: --python applies to Python targets only; "
+                  "ignored for a Rust target", file=sys.stderr)
         return _measure_rust(file, qualname, budget, features=features)
+    if features:
+        print("warning: --features applies to Rust targets only; "
+              "ignored for a Python target", file=sys.stderr)
     file_path = Path(file).resolve()
     root = Path(target_root).resolve() if target_root else _guess_root(file_path)
     plugin = PythonPlugin(python=python)
@@ -199,9 +208,15 @@ def scan_target(target: str, budget: Budget, python: str | None = None,
     from perfmeasure.core.scan import _summarize, collect_files, scan
     root = Path(target).resolve()
     if (root / "Cargo.toml").exists():
+        if python:
+            print("warning: --python applies to Python targets only; "
+                  "ignored for a Rust target", file=sys.stderr)
         reports, note = _measure_rust(str(root), None, budget,
                                       features=features)
         return reports, note, _summarize(reports, [])
+    if features:
+        print("warning: --features applies to Rust targets only; "
+              "ignored for a Python target", file=sys.stderr)
     plugin = PythonPlugin(python=python)
     interpreter, how = plugin.resolve_interpreter(root)
     files = collect_files([str(root)], plugin.extensions, exclude)
