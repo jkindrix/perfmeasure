@@ -192,9 +192,16 @@ def _map_hint(hint) -> tuple[str | None, str]:
         return None, f"unresolvable annotation {hint!r}"
     if hint is bool:                      # before int: bool subclasses int
         return "bool_", ""                # drivable, held fixed — never scaled
-    if isinstance(hint, type) and issubclass(hint, (pathlib.PurePath, os.PathLike)):
-        # the biggest cross-project bucket: honest label, not "unsupported"
-        return None, "filesystem path (I/O domain, not generated)"
+    try:
+        if isinstance(hint, type) and issubclass(
+                hint, (pathlib.PurePath, os.PathLike)):
+            # the biggest cross-project bucket: honest label, not "unsupported"
+            return None, "filesystem path (I/O domain, not generated)"
+    except TypeError:
+        # 3.9/3.10 quirk: isinstance(list[int], type) is True, but
+        # issubclass() against an ABC then raises — a generic alias is
+        # not a path; fall through to the origin-based mapping below
+        pass
     if hint is int:
         return "int_mag", ""
     if hint is float:

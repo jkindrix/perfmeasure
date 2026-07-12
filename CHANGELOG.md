@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.1 (2026-07-12)
+
+- **Python 3.9 targets actually work now.** On 3.9/3.10,
+  `isinstance(list[int], type)` is True, so the runner's unguarded
+  `issubclass(hint, os.PathLike)` check raised TypeError and killed
+  discovery for any 3.9 target using PEP 585 builtin generics — the 0.6.0
+  floor verification had used `typing.List` hints and missed it. Found by
+  the new CI floor check on its first run. Guarded; pinned by a
+  conformance test that discovers builtin-generic hints under a real 3.9
+  (skipped where none is available).
+- **Runner deaths are no longer opaque**: `discovery failed: runner died
+  (exit 1)` now appends the runner's stderr tail, which is exactly what
+  diagnosing the above required.
+
 ## 0.6.0 (2026-07-12)
 
 Burn-down from a two-track external review: a body-of-work review

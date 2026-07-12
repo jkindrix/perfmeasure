@@ -64,7 +64,10 @@ def measure_target(file: str, qualname: str | None, budget: Budget,
             protocol.discover_msg(session.next_id(), [str(file_path)], only),
             timeout=60.0)
         if resp["op"] == "error":
-            raise RuntimeError(f"discovery failed: {resp['message']}")
+            tail = "\n".join((resp.get("detail") or {}).get("stderr_tail", []))
+            raise RuntimeError(
+                f"discovery failed: {resp['message']}"
+                + (f"\nrunner stderr:\n{tail}" if tail else ""))
         descs = [_descriptor(f) for f in resp["functions"]]
         if qualname and not descs:
             raise RuntimeError(

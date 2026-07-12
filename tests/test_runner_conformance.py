@@ -106,3 +106,32 @@ def test_known_mutates_hint_is_honored(session):
     assert resp["op"] == "result"
     assert resp["mutates"] is True
     assert resp["batched"] is False
+
+
+def _find_py39():
+    import shutil
+    import subprocess
+    if shutil.which("uv"):
+        r = subprocess.run(["uv", "python", "find", "3.9"],
+                           capture_output=True, text=True)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    return shutil.which("python3.9")
+
+
+@pytest.mark.skipif(_find_py39() is None, reason="no Python 3.9 available")
+def test_discovery_on_py39_with_builtin_generics():
+    # 3.9/3.10 quirk: isinstance(list[int], type) is True, so an unguarded
+    # issubclass() against os.PathLike raised TypeError and killed the
+    # runner mid-discovery — every 3.9 target using PEP 585 hints crashed
+    plugin = PythonPlugin(python=_find_py39())
+    s = RunnerSession(plugin.runner_command(Path(FIXTURE).parent))
+    try:
+        resp = s.request(
+            protocol.discover_msg(s.next_id(), [FIXTURE], None), timeout=30)
+        assert resp["op"] == "result", resp
+        fns = {f["fid"].rpartition("::")[2]: f for f in resp["functions"]}
+        assert fns["linear"]["drivable"] is True
+        assert s.hello["runtime"].startswith("CPython 3.9")
+    finally:
+        s.close()
