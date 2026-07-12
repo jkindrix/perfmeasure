@@ -1,7 +1,32 @@
 [
-  {"path": "~/rust-expect/crates/rust-expect", "features": ["full"]},
-  {"path": "~/rust-expect/crates/rust-pty"},
-  {"path": "~/claude-snatch"},
-  {"path": "~/rust-mssql-driver/crates/mssql-codec"},
-  {"path": "src/perfmeasure"}
+  {
+    "path": "~/rust-expect/crates/rust-expect",
+    "features": [
+      "full"
+    ]
+  },
+  {
+    "path": "~/rust-expect/crates/rust-pty"
+  },
+  {
+    "path": "~/claude-snatch"
+  },
+  {
+    "path": "~/rust-mssql-driver/crates/mssql-codec"
+  },
+  {
+    "path": "src/perfmeasure"
+  },
+  {
+    "path": "~/perfmeasure-wild/python-sortedcontainers/src/sortedcontainers"
+  },
+  {
+    "path": "~/perfmeasure-wild/humanize/src/humanize"
+  },
+  {
+    "path": "~/perfmeasure-wild/memchr"
+  },
+  {
+    "path": "~/perfmeasure-wild/bytecount"
+  }
 ]

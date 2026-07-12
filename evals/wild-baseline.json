@@ -1,7 +1,7 @@
 {
   "~/rust-expect/crates/rust-expect": {
     "functions": 963,
-    "measured": 206,
+    "measured": 210,
     "reasons": {
       "param 'command'": 2,
       "generic": 17,
@@ -10,7 +10,6 @@
       "param 'path'": 7,
       "param 'pattern'": 11,
       "param 'c'": 3,
-      "param 'chance'": 2,
       "param 'text'": 5,
       "method (self receiver; no synthesizable constructor for DetectedEncoding)": 1,
       "param 'exit_status'": 1,
@@ -19,7 +18,7 @@
       "param 'context'": 1,
       "method (self receiver; no synthesizable constructor for ExpectError)": 3,
       "param 'reason'": 4,
-      "param 'name'": 16,
+      "param 'name'": 17,
       "param 'host'": 4,
       "param 'user'": 1,
       "param 'matched'": 1,
@@ -43,7 +42,6 @@
       "method (self receiver; no synthesizable constructor for PooledConnection)": 6,
       "method (self receiver; no synthesizable constructor for BackendType)": 2,
       "method (self receiver; no synthesizable constructor for SyncSession)": 28,
-      "param 'refill_rate'": 1,
       "param 'dir'": 2,
       "cfg_inactive": 3,
       "method (self receiver; no synthesizable constructor for Deadline)": 3,
@@ -86,10 +84,8 @@
       "param 'fg'": 1,
       "method (self receiver; no synthesizable constructor for PiiType)": 3,
       "param 'pii_type'": 4,
-      "param 'confidence'": 1,
       "method (self receiver; no synthesizable constructor for PiiMatch)": 6,
       "method (self receiver; no synthesizable constructor for CustomPattern)": 3,
-      "param 'threshold'": 1,
       "param 'style'": 1,
       "method (self receiver; no synthesizable constructor for PatternEntry)": 2,
       "param 'entry'": 1
@@ -110,7 +106,7 @@
   },
   "~/claude-snatch": {
     "functions": 655,
-    "measured": 80,
+    "measured": 74,
     "reasons": {
       "method (self receiver; no synthesizable constructor for PromptSource)": 1,
       "method (self receiver; no synthesizable constructor for SessionChunk)": 1,
@@ -134,7 +130,6 @@
       "method (self receiver; no synthesizable constructor for CostDataPoint)": 1,
       "param 'path'": 31,
       "param 'point'": 1,
-      "param 'cost'": 1,
       "param 'start'": 2,
       "method (self receiver; no synthesizable constructor for AnalyticsSummary)": 2,
       "param 'summaries'": 1,
@@ -149,9 +144,9 @@
       "param 'shell'": 1,
       "method (self receiver; no synthesizable constructor for ContentFilter)": 1,
       "param 'project_dir'": 10,
-      "param 'daily_cost'": 1,
       "method (self receiver; no synthesizable constructor for BudgetAlert)": 2,
       "method (self receiver; no synthesizable constructor for DecisionStatus)": 1,
+      "harness_compile_failed": 21,
       "method (self receiver; no synthesizable constructor for SessionChain)": 8,
       "method (self receiver; no synthesizable constructor for ClaudeDirectory)": 17,
       "param 'message'": 4,
@@ -202,7 +197,6 @@
       "method (self receiver; no synthesizable constructor for Conversation)": 24,
       "param 'text'": 2,
       "param 'outcome'": 1,
-      "harness_compile_failed": 13,
       "param 'source'": 1,
       "param 'frame'": 2,
       "method (self receiver; no synthesizable constructor for AtomicFile)": 2,
@@ -223,26 +217,64 @@
     }
   },
   "src/perfmeasure": {
-    "functions": 61,
-    "measured": 14,
+    "functions": 66,
+    "measured": 16,
     "reasons": {
-      "no_scalable_params": 11,
+      "no_scalable_params": 12,
       "rejected": 13,
       "param 'inputs'": 1,
       "param 'stream'": 1,
-      "param 'timeout'": 1,
       "methods unreachable": 1,
       "param 'path'": 3,
       "param 'target_root'": 3,
-      "param 'cargo_toml'": 1,
-      "param 'crate_root'": 3,
+      "param 'cargo_toml'": 2,
+      "param 'crate_root'": 4,
       "param 'functions'": 1,
       "param 'target'": 1,
+      "param 'reports'": 4,
+      "param 'result'": 1,
       "param 'points'": 1,
-      "param 'wall_cost'": 1,
-      "param 'seconds'": 1,
-      "param 'reports'": 3,
+      "param 'pts'": 1,
       "param 'extensions'": 1
+    }
+  },
+  "~/perfmeasure-wild/python-sortedcontainers/src/sortedcontainers": {
+    "functions": 94,
+    "measured": 57,
+    "reasons": {
+      "no_scalable_params": 7,
+      "rejected": 20,
+      "*kwargs": 1,
+      "methods unreachable": 3,
+      "*iterables": 6
+    }
+  },
+  "~/perfmeasure-wild/humanize/src/humanize": {
+    "functions": 21,
+    "measured": 15,
+    "reasons": {
+      "rejected": 1,
+      "no_scalable_params": 4,
+      "methods unreachable": 1
+    }
+  },
+  "~/perfmeasure-wild/memchr": {
+    "functions": 127,
+    "measured": 50,
+    "reasons": {
+      "unsafe fn (safety contract cannot be assumed)": 30,
+      "generic": 18,
+      "rejected": 8,
+      "no_scalable_params": 16,
+      "cfg_inactive": 4,
+      "param 'prefilter'": 1
+    }
+  },
+  "~/perfmeasure-wild/bytecount": {
+    "functions": 4,
+    "measured": 2,
+    "reasons": {
+      "cfg_inactive": 2
     }
   }
 }
