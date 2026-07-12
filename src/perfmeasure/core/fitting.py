@@ -91,6 +91,34 @@ def monotonicity_violations(values: list[float]) -> int:
     return sum(1 for a, b in zip(values, values[1:]) if b < 0.8 * a)
 
 
+def per_element_verdict(pts: list[tuple[float, float]]) -> str | None:
+    """Sharper discriminator for the {n, n log n} pair on LOW-NOISE data
+    (instruction counts): per-element cost (y-a)/n is flat for O(n) and
+    grows ~log n for O(n log n) — a direct test of the log factor that
+    class-RMSE blurs when the overhead floor eats half the ladder.
+    Returns "flat", "growing", or None (not enough clean signal).
+    Thresholds calibrated against evals/harness.py."""
+    if len(pts) < MIN_POINTS:
+        return None
+    pts = sorted(pts)
+    a = 0.95 * min(v for _, v in pts)
+    signal = [(n, (v - a) / n) for n, v in pts if v > 4 * a and n > 0]
+    if len(signal) < 4:
+        return None
+    span = signal[-1][0] / signal[0][0]
+    if span < 8:                       # < 3 doublings of clean signal
+        return None
+    rise = signal[-1][1] / max(signal[0][1], 1e-15)
+    # expected rise for a true log factor over this span
+    log_rise = math.log(signal[-1][0]) / math.log(max(signal[0][0], 2.0))
+    corr = _trend_corr([r for _, r in signal])
+    if rise < min(1.3, 1 + (log_rise - 1) / 2):
+        return "flat"
+    if rise > 1 + (log_rise - 1) / 2 and corr >= 0.85:
+        return "growing"
+    return None
+
+
 def fit(points: list[Point], value=lambda p: p.seconds,
         floor: float = TIME_FLOOR) -> FitResult:
     raw = [(p, value(p)) for p in points if value(p) is not None]

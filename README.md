@@ -31,6 +31,11 @@ perfmeasure fn path/to/crate::module::func   # measure one Rust pub fn
 perfmeasure fn path/to/file.py               # every drivable function in a file
 perfmeasure scan src/                        # whole project + coverage summary
 perfmeasure scan path/to/crate               # Cargo crate (library target)
+perfmeasure scan src/ --json > baseline.json # save a complexity baseline
+perfmeasure diff src/ --baseline baseline.json  # exit 1 if any function's
+                                             # class regressed (one-sided,
+                                             # ambiguity-robust; overlap
+                                             # warns instead of failing)
 perfmeasure ... --json                       # full records, machine-readable
 perfmeasure ... --verbose                    # per-shape ladders and stop reasons
 ```

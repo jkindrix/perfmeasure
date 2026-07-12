@@ -91,3 +91,22 @@ def test_memory_linear():
            for n in SIZES]
     r = fit(pts, value=lambda p: p.peak_bytes, floor=MEM_FLOOR)
     assert "O(n)" in r.candidates
+
+
+def test_per_element_verdict_flat_vs_growing():
+    from perfmeasure.core.fitting import per_element_verdict
+    import math
+    ns = [2 ** e for e in range(4, 21)]
+    # true O(n): 500/element over a 3.6k call overhead
+    flat = [(float(n), 3600.0 + 500.0 * n) for n in ns]
+    # true O(n log n): 80/element/log2
+    grow = [(float(n), 3600.0 + 80.0 * n * math.log2(n)) for n in ns]
+    assert per_element_verdict(flat) == "flat"
+    assert per_element_verdict(grow) == "growing"
+
+
+def test_per_element_verdict_needs_signal():
+    from perfmeasure.core.fitting import per_element_verdict
+    # overhead-dominated everywhere: no verdict, never a guess
+    pts = [(float(2 ** e), 3600.0 + 2.0 * 2 ** e) for e in range(4, 10)]
+    assert per_element_verdict(pts) is None

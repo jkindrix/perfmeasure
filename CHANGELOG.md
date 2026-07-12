@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.5.0 (2026-07-12)
+
+Burn-down round from field-testing against fresh real-world targets
+(humanize, memchr, bytecount, sortedcontainers), competitor archaeology
+(plasma-umass/bigO, zertyz/big-O, pberkes/big_O, iai-callgrind), and
+literature research. Every gap class found in the field got a fix plus
+eval-corpus teeth.
+
+- **Instructions channel** (Linux, Python targets): retired-instruction
+  counts via perf_event (<1% variance) as a scale-free second channel.
+  A clean instruction fit one class below the wall headline becomes the
+  headline (`wall_cache_inflated` keeps the wall reading in candidates).
+  A per-element trend test sharpens the {n, n log n} pair further. Gate
+  exact: 66 -> ~80/92; adjacency-only passes 5 -> 0-2; ratchets
+  tightened (EXACT_FLOOR 52 -> 72, ADJACENT_ONLY_MAX 8 -> 4). Rust
+  instruction counting (callgrind) is planned, not yet wired.
+- **Receiver scaling**: methods on len-verifiable fillable receivers
+  (iterable ctor, update/extend/add/append/push) are measured against
+  receivers of n items — `SortedList.add` reads its class in receiver
+  size instead of a vacuous empty-instance O(1). Probing also runs
+  against filled receivers. Mutating (including lazy-cache-building)
+  methods get a fresh filled instance per rep: cold-path semantics,
+  documented.
+- **Drivability gap classes** (field-found): multi-member union hints
+  drive their first generatable member; plain float params (float_mag,
+  Python + Rust f64/f32); list[Any]; per-param eval fallback when
+  get_type_hints fails wholesale (TYPE_CHECKING-guarded aliases) with
+  still-unresolvable annotations becoming probe-eligible; Option<T>
+  params flip None -> Some(synthesized) after a first-size rejection;
+  foreign-arch cfgs and unsafe fns filtered at discovery instead of
+  burning rebuild cycles. humanize: 0/21 -> 15/21 measured.
+- **diff subcommand**: complexity-regression gate against a `scan
+  --json` baseline. One-sided and ambiguity-robust: fails only when the
+  most charitable new reading exceeds the old worst case; overlapping
+  candidate sets warn. Catches the accidental-quadratic class that
+  fixed-n benchmark gates miss.
+- **Signal integrity**: runner stdout EOF is now distinguishable from a
+  hang, so a crashing runner can no longer be misclassified
+  `timeout_hard` and evade the crash blacklist (was a race, and a flaky
+  test). Pass-through returns (`return xs`) no longer trigger the
+  tracemalloc blindspot demotion (`ret_is_input`).
+
 ## 0.4.0 (2026-07-12)
 
 Hardening round from an external body-of-work review: everywhere a signal

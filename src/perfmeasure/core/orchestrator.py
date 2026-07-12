@@ -308,6 +308,22 @@ def _fit_shapes(run: _Run, report: FunctionReport) -> None:
             s.ops_fit = fitting.fit(s.points,
                                     value=lambda p: p.instructions,
                                     floor=fitting.OPS_FLOOR)
+            # the {n, n log n} pair gets the sharper per-element test —
+            # the log factor is directly visible in (ops - a)/n where
+            # class-RMSE is blurred by the call-overhead floor
+            if (s.ops_fit.cls
+                    and set(s.ops_fit.candidates) == {"O(n)", "O(n log n)"}):
+                verdict = fitting.per_element_verdict(
+                    [(float(p.n), float(p.instructions)) for p in s.points
+                     if p.instructions is not None])
+                if verdict == "flat":
+                    s.ops_fit.cls = "O(n)"
+                    s.ops_fit.candidates = ["O(n)"]
+                    s.ops_fit.reason = "per-element flat"
+                elif verdict == "growing":
+                    s.ops_fit.cls = "O(n log n)"
+                    s.ops_fit.candidates = ["O(n log n)"]
+                    s.ops_fit.reason = "per-element log growth"
 
 
 def _blindspot_check(s: ShapeResult, report: FunctionReport) -> None:

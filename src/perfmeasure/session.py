@@ -23,6 +23,7 @@ from perfmeasure import protocol
 CRASH_LIMIT = 2
 HANDSHAKE_TIMEOUT_S = 30.0
 STDERR_TAIL_LINES = 20
+_EOF = object()     # runner stdout closed — a crash signal, never a hang
 
 
 class RunnerSession:
@@ -52,7 +53,7 @@ class RunnerSession:
         threading.Thread(target=self._pump, args=(self._proc.stderr, False),
                          daemon=True).start()
         hello = self._read(HANDSHAKE_TIMEOUT_S)
-        if hello is None or hello.get("op") != "hello":
+        if not isinstance(hello, dict) or hello.get("op") != "hello":
             raise RuntimeError(
                 f"runner failed to start: {self._crash_detail()}")
         if hello.get("protocol") != protocol.PROTOCOL_VERSION:
@@ -69,8 +70,11 @@ class RunnerSession:
         if is_stdout and out is self._out:
             out.put(None)  # EOF sentinel, ignored after restart
 
-    def _read(self, timeout: float) -> dict | None:
-        """One protocol message, or None on hang/EOF. Non-protocol lines
+    def _read(self, timeout: float):
+        """One protocol message, None on hang, or _EOF when the runner's
+        stdout closed. EOF and timeout MUST stay distinguishable: stdout
+        closes before poll() observes the exit, and a crash read as a
+        hang would evade the crash blacklist. Non-protocol lines
         (a third-party runner letting stray output reach fd 1) are logged
         and skipped rather than read as a hang — SIGKILLing a healthy
         runner over one stray print would be a fragile contract. The
@@ -85,7 +89,7 @@ class RunnerSession:
             except queue.Empty:
                 return None
             if line is None:
-                return None
+                return _EOF
             try:
                 return protocol.parse_msg(line)
             except ValueError:
@@ -133,6 +137,15 @@ class RunnerSession:
             return self._crashed(msg)
         while True:
             resp = self._read(timeout)
+            if resp is _EOF:
+                # stdout closed mid-request: the runner is dying. Wait
+                # briefly so the crash detail carries the real exit code
+                # instead of racing poll().
+                try:
+                    self._proc.wait(timeout=2.0)
+                except Exception:
+                    pass
+                return self._crashed(msg)
             if resp is None:
                 if self._alive():  # genuine hang
                     self._kill()

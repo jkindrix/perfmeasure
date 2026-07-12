@@ -124,7 +124,16 @@ def main(argv: list[str] | None = None) -> int:
                              "wall time never exceeds budget + --rescue")
     scan_p.add_argument("--exclude", action="append", default=[],
                         help="glob/substring to skip (repeatable)")
-    for p in (fn, scan_p):
+    diff_p = sub.add_parser(
+        "diff", help="re-measure DIR and fail (exit 1) on any function "
+                     "whose complexity class regressed vs a --baseline "
+                     "JSON (from `scan --json`)")
+    diff_p.add_argument("target")
+    diff_p.add_argument("--baseline", required=True,
+                        help="baseline JSON from a previous `scan --json`")
+    diff_p.add_argument("--budget", type=float, default=10.0)
+    diff_p.add_argument("--exclude", action="append", default=[])
+    for p in (fn, scan_p, diff_p):
         p.add_argument("--json", action="store_true")
         p.add_argument("--verbose", action="store_true")
         p.add_argument("--python", help="target project's interpreter")
@@ -156,6 +165,17 @@ def main(argv: list[str] | None = None) -> int:
     except (RuntimeError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
+    if args.command == "diff":
+        import json as _json
+        from perfmeasure.core.diff import diff_reports, render_diff
+        raw = _json.loads(Path(args.baseline).read_text())
+        baseline = raw["functions"] if isinstance(raw, dict) else raw
+        result = diff_reports(reports, baseline)
+        if args.json:
+            print(_json.dumps(result, indent=2))
+        else:
+            print(render_diff(result))
+        return 1 if result["regressions"] else 0
     if args.json:
         if summary is not None:
             import json as _json
