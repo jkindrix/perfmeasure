@@ -183,6 +183,8 @@ def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
             # one timed call on a function steep enough to have needed
             # rescuing — its space, if unaffordable, stays honestly
             # unmeasured rather than costing the time fit
+            has_instr = session.hello.get(
+                "capabilities", {}).get("instructions")
             if ladder._backfilling:
                 measure = ["time"]
                 # no warmup means no runner-side mutation detection: pass
@@ -194,6 +196,10 @@ def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
             else:
                 measure = (["time", "memory"] if npts < 5 or npts % 2 == 1
                            else ["time"])
+                if has_instr:
+                    # the scale-free channel: 3 extra calls per size buys
+                    # the n-vs-n·log·n separation wall time cannot make
+                    measure.append("instructions")
                 lean = {"warmup": budget.warmup,
                         "max_repeats": budget.max_repeats,
                         "min_total_ms": budget.min_total_ms}
@@ -259,7 +265,8 @@ def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
                 batched=resp.get("batched", False),
                 first_seconds=timings[0] if timings else 0.0,
                 warmup_seconds=resp.get("warmup_seconds"),
-                ret_deepsize=resp.get("ret_deepsize")))
+                ret_deepsize=resp.get("ret_deepsize"),
+                instructions=resp.get("instructions")))
             ladder.record(n, result.points[-1].seconds, 0.0)
         result.stop_reason = result.stop_reason or ladder.stop_reason
         run.shapes.append(result)
@@ -294,6 +301,13 @@ def _fit_shapes(run: _Run, report: FunctionReport) -> None:
             s.space_fit = fitting.fit(s.points, value=lambda p: p.peak_bytes,
                                       floor=fitting.MEM_FLOOR)
             _blindspot_check(s, report)
+        if (any(p.instructions is not None for p in s.points)
+                and not report.flags.get("suspected_memoization")):
+            # scale-free channel; a memoizer's counts measure the cached
+            # path, so it gets no ops fit rather than a wrong one
+            s.ops_fit = fitting.fit(s.points,
+                                    value=lambda p: p.instructions,
+                                    floor=fitting.OPS_FLOOR)
 
 
 def _blindspot_check(s: ShapeResult, report: FunctionReport) -> None:
@@ -354,6 +368,31 @@ def _aggregate(report: FunctionReport, run: _Run, probed: bool) -> None:
     report.time_candidates = fit.candidates
     report.time_worst_shape = shape
     report.provenance = AMBIGUOUS if len(fit.candidates) > 1 else MEASURED
+
+    ops_fits = [(s.shape, s.ops_fit) for s in report.per_shape
+                if s.ops_fit and s.ops_fit.cls]
+    if ops_fits:
+        _, ofit = max(ops_fits, key=lambda t: CLASS_ORDER[t[1].cls])
+        report.ops_cls = ofit.cls
+        report.ops_candidates = ofit.candidates
+        # headline refinement: a CLEAN instruction fit one class BELOW the
+        # wall headline is the algorithmic answer — the higher wall
+        # reading is cache physics (dict_get_all reads n log n in wall,
+        # dead-flat n in instructions). The wall class stays in the
+        # candidate set and is named in a flag, never silently dropped.
+        # A gap of more than one class means something else is wrong and
+        # nothing is refined.
+        adjacent = CLASS_ORDER[fit.cls] - CLASS_ORDER[ofit.cls] == 1
+        if (len(ofit.candidates) == 1
+                and CLASS_ORDER[ofit.cls] < CLASS_ORDER[fit.cls]
+                and (ofit.cls in fit.candidates or adjacent)):
+            report.flags["wall_cache_inflated"] = fit.cls
+            report.time_cls = ofit.cls
+            report.time_candidates = sorted(
+                set(fit.candidates) | {ofit.cls},
+                key=CLASS_ORDER.__getitem__, reverse=True)
+            report.provenance = (AMBIGUOUS if len(report.time_candidates) > 1
+                                 else MEASURED)
 
     if space_fits:
         sshape, sfit = max(space_fits, key=lambda t: CLASS_ORDER[t[1].cls])

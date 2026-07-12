@@ -25,7 +25,10 @@ def render_human(reports: list[FunctionReport], verbose: bool = False) -> str:
         if r.provenance in (MEASURED, AMBIGUOUS):
             t = r.time_cls or "?"
             if r.provenance == AMBIGUOUS:
-                t = " | ".join(r.time_candidates)
+                # headline first (it may be the ops-refined class, not the
+                # worst candidate), rivals after
+                rest = [c for c in r.time_candidates if c != r.time_cls]
+                t = " | ".join([t] + rest)
             s = r.space_cls or "unmeasured"
             if len(r.space_candidates) > 1:
                 s = " | ".join(r.space_candidates)

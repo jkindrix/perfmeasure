@@ -12,6 +12,7 @@ stderr at boot so target code that print()s cannot corrupt the protocol.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import gc
 import importlib
 import importlib.util
@@ -42,6 +43,74 @@ SHAPES = ["random", "sorted", "reversed", "dup_heavy", "all_equal", "magnitude"]
 BATCH_THRESHOLD_S = 10e-6   # calls faster than this are timed in batches
 BATCH_TARGET_S = 200e-6
 INNER_LIST_LEN = 16
+
+
+# --- instruction counting (perf_event, Linux) ---------------------------------
+# Retired-instruction counts are near-deterministic (<1% variance), so the
+# n-vs-n·log·n curvature that cache-bent wall time cannot separate is
+# plainly visible in this channel. Best-effort: any failure (paranoid
+# sysctl, container, non-Linux) just disables the capability.
+
+_PERF_IOC_ENABLE, _PERF_IOC_DISABLE, _PERF_IOC_RESET = 0x2400, 0x2401, 0x2403
+_PERF_SYSCALL = {"x86_64": 298, "aarch64": 241}.get(platform.machine())
+
+
+class _PerfAttr(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_uint32), ("size", ctypes.c_uint32),
+                ("config", ctypes.c_uint64),
+                ("sample_period", ctypes.c_uint64),
+                ("sample_type", ctypes.c_uint64),
+                ("read_format", ctypes.c_uint64),
+                ("flags", ctypes.c_uint64),
+                ("wakeup_events", ctypes.c_uint32),
+                ("bp_type", ctypes.c_uint32),
+                ("config1", ctypes.c_uint64), ("config2", ctypes.c_uint64),
+                ("branch_sample_type", ctypes.c_uint64),
+                ("sample_regs_user", ctypes.c_uint64),
+                ("sample_stack_user", ctypes.c_uint32),
+                ("clockid", ctypes.c_int32),
+                ("sample_regs_intr", ctypes.c_uint64),
+                ("aux_watermark", ctypes.c_uint32),
+                ("sample_max_stack", ctypes.c_uint16),
+                ("reserved", ctypes.c_uint16)]
+
+
+def _open_instruction_counter():
+    if not sys.platform.startswith("linux") or _PERF_SYSCALL is None:
+        return None, None
+    try:
+        attr = _PerfAttr()
+        attr.type = 0                          # PERF_TYPE_HARDWARE
+        attr.size = ctypes.sizeof(_PerfAttr)
+        attr.config = 1                        # PERF_COUNT_HW_INSTRUCTIONS
+        # disabled | exclude_kernel | exclude_hv
+        attr.flags = 1 | (1 << 5) | (1 << 6)
+        libc = ctypes.CDLL(None, use_errno=True)
+        fd = libc.syscall(_PERF_SYSCALL, ctypes.byref(attr), 0, -1, -1, 0)
+        if fd < 0:
+            return None, None
+        # verify a read works before advertising the capability
+        libc.ioctl(fd, _PERF_IOC_RESET, 0)
+        libc.ioctl(fd, _PERF_IOC_ENABLE, 0)
+        libc.ioctl(fd, _PERF_IOC_DISABLE, 0)
+        struct.unpack("<Q", os.read(fd, 8))
+        return fd, libc
+    except Exception:
+        return None, None
+
+
+_PERF_FD, _PERF_LIBC = _open_instruction_counter()
+
+
+def _count_instructions(fn, args):
+    """Retired instructions for one fn(*args) call (None if unavailable)."""
+    if _PERF_FD is None:
+        return None
+    _PERF_LIBC.ioctl(_PERF_FD, _PERF_IOC_RESET, 0)
+    _PERF_LIBC.ioctl(_PERF_FD, _PERF_IOC_ENABLE, 0)
+    fn(*args)
+    _PERF_LIBC.ioctl(_PERF_FD, _PERF_IOC_DISABLE, 0)
+    return struct.unpack("<Q", os.read(_PERF_FD, 8))[0]
 
 
 # --- protocol plumbing --------------------------------------------------------
@@ -768,6 +837,29 @@ def do_call(req):
             finally:
                 gc.enable()
 
+        instructions = None
+        if "instructions" in measure and _PERF_FD is not None:
+            # separate pass, GC paused: instruction counts are the
+            # scale-free channel — min-of-3 absorbs the rare dict-resize
+            # or interpreter-warmup wobble
+            gc.collect()
+            gc.disable()
+            try:
+                counts = []
+                for _ in range(3):
+                    if mutates:
+                        args = _materialize_all(specs)
+                    if recv_mutates:
+                        fn = _callable_for(fid, recv_spec)
+                    counts.append(_count_instructions(fn, args))
+                    if time.perf_counter() - started > budget_s:
+                        break
+                instructions = min(c for c in counts if c is not None)
+            except Exception:
+                instructions = None
+            finally:
+                gc.enable()
+
         peak = ret_deepsize = None
         if "memory" in measure:
             if mutates:
@@ -811,6 +903,7 @@ def do_call(req):
             "wall_seconds": timings, "batched": batched,
             "warmup_seconds": warmup_seconds,
             "peak_alloc_bytes": peak, "ret_deepsize": ret_deepsize,
+            "instructions": instructions,
             "mutates": mutates, "mutates_receiver": recv_mutates,
             "repeats_done": len(timings),
             "notes": notes}
@@ -841,7 +934,8 @@ def main():
                    f"{platform.python_version()} ({sys.executable})",
         "platform": platform.platform(),
         "capabilities": {"spec_types": SPEC_TYPES, "shapes": SHAPES,
-                         "memory": "tracemalloc", "discover": True},
+                         "memory": "tracemalloc", "discover": True,
+                         "instructions": _PERF_FD is not None},
     })
     for line in sys.stdin:
         line = line.strip()

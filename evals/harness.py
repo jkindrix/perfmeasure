@@ -47,8 +47,10 @@ RUST_CORPUS = Path(__file__).parent / "corpus_rust"
 
 DEFAULT_MAX_WIDTH = 2       # per-case candidate-set ceiling (E: anti-stuffing)
 MEAN_WIDTH_CEILING = 1.75   # global mean width ceiling
-EXACT_FLOOR = 52            # ratchet upward when the fitter improves
-ADJACENT_ONLY_MAX = 8       # passes that exist only via time_any adjacency
+EXACT_FLOOR = 72            # ratchet upward when the fitter improves
+                            # (80 observed with the instructions channel)
+ADJACENT_ONLY_MAX = 4       # passes that exist only via time_any adjacency
+                            # (2 observed with the instructions channel)
 EXPECTED = json.loads((Path(__file__).parent / "expected.json").read_text())
 if shutil.which("cargo"):
     EXPECTED.update(json.loads(

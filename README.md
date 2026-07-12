@@ -101,7 +101,7 @@ and Rust, O(1) through O(2ⁿ) — typed, unhinted (probing), mutating,
 memoized, cache-bound, panicking, methods, constructed instances, and
 undrivable-by-design.
 <!-- gate:begin (written by `python evals/harness.py --update-readme`; do not edit) -->
-Current run: **92/92 time classes** (69 exact, rest ambiguous-containing-truth, mean ambiguity width 1.57), **28/28 space classes**, **10/10 undrivable recall** — full gate in ~166 s.
+Current run: **92/92 time classes** (78 exact, rest ambiguous-containing-truth, mean ambiguity width 1.64), **28/28 space classes**, **10/10 undrivable recall** — full gate in ~180 s.
 <!-- gate:end -->
 Drivability on real projects is tracked separately as a regression
 metric (`python evals/wild.py`).
@@ -111,11 +111,21 @@ metric (`python evals/wild.py`).
 - **Observed, not proven.** Results are measured behavior on generated
   inputs. Shapes catch common worst cases (sorted/reverse/duplicates);
   they do not prove worst-case bounds (e.g. hash-collision attacks).
-- **n vs n log n is often AMBIGUOUS** at practical sizes — by design.
-  Reporting both beats false precision.
+- **n vs n log n is often AMBIGUOUS in wall time** at practical sizes —
+  by design; reporting both beats false precision. The **instructions
+  channel** (Linux, Python targets: retired-instruction counts via
+  perf_event, <1% variance) resolves most of these: a clean instruction
+  fit one class below the wall headline becomes the headline
+  (`wall_cache_inflated` names the wall reading, which stays in the
+  candidate set). No perf access (containers with
+  `perf_event_paranoid > 1`, non-Linux) just means wall-time-only
+  answers, exactly as before. Rust instruction counting is not yet
+  wired (planned: callgrind).
 - **Cache effects are real physics.** Random access into multi-MB
   structures scales superlinearly in wall time; a memory-bound O(n) can
-  honestly read one class high. The eval corpus encodes this.
+  honestly read one class high — the wall channel keeps saying so even
+  when the instructions channel corrects the class. The eval corpus
+  encodes this.
 - **Space semantics are per-language** (declared in every record):
   Python's `tracemalloc` is blind to C-extension allocations (numpy
   buffers, etc. — flagged when the return value's size betrays it);

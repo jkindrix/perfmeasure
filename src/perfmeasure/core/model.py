@@ -144,6 +144,7 @@ class Point:
     first_seconds: float = 0.0  # first rep
     warmup_seconds: float | None = None  # first-ever call — honest for memoizers
     ret_deepsize: int | None = None  # sampled deep-size of the return value
+    instructions: int | None = None  # retired instructions per call (min-of-3)
 
 
 @dataclass
@@ -160,6 +161,7 @@ class ShapeResult:
     points: list[Point]
     time_fit: FitResult | None = None
     space_fit: FitResult | None = None
+    ops_fit: FitResult | None = None   # instruction-count channel
     stop_reason: str = ""
     failures: list[dict[str, Any]] = field(default_factory=list)
 
@@ -177,6 +179,8 @@ class FunctionReport:
     space_cls: str | None = None
     space_candidates: list[str] = field(default_factory=list)
     space_worst_shape: str | None = None
+    ops_cls: str | None = None         # instruction-count class (scale-free
+    ops_candidates: list[str] = field(default_factory=list)  # channel)
     confidence: str = "high"
     driver_params: list[str] = field(default_factory=list)
     fixed_params: dict[str, Any] = field(default_factory=dict)
@@ -204,6 +208,10 @@ class FunctionReport:
                 "worst_shape": self.space_worst_shape,
                 "allocator_visibility": self.allocator,
             },
+            "ops": {
+                "cls": self.ops_cls,
+                "candidates": self.ops_candidates,
+            },
             "confidence": self.confidence,
             "drive": {
                 "driver_params": self.driver_params,
@@ -217,6 +225,7 @@ class FunctionReport:
                     "shape": s.shape,
                     "time": _fit_json(s.time_fit),
                     "space": _fit_json(s.space_fit),
+                    "ops": _fit_json(s.ops_fit),
                     "stop_reason": s.stop_reason,
                     "points": [
                         {"n": p.n, "seconds": p.seconds, "reps": p.reps,
@@ -224,6 +233,7 @@ class FunctionReport:
                          "warmup_seconds": p.warmup_seconds,
                          "peak_bytes": p.peak_bytes,
                          "ret_deepsize": p.ret_deepsize,
+                         "instructions": p.instructions,
                          "batched": p.batched}
                         for p in s.points
                     ],

@@ -36,6 +36,7 @@ MIN_POINTS = 5
 MIN_DOUBLINGS = 3
 TIME_FLOOR = 50e-6           # single-call timer noise; batched points are finer
 MEM_FLOOR = 1024.0
+OPS_FLOOR = 100.0            # interpreter call overhead in instructions
 EXP_MAX_N = 64
 TIE_BAND = 0.02              # log10-rmse gap treated as a tie -> simpler class
 ADEQUACY_ABS = 0.10          # a rival within 10^0.1 (~26%) typical deviation
