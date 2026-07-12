@@ -17,7 +17,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from perf_lint.adjudicate import LLMClient, adjudicate  # noqa: E402
+from perf_lint.adjudicate import CommandClient, LLMClient, adjudicate  # noqa: E402
 from perf_lint.cli import run  # noqa: E402
 
 
@@ -48,8 +48,13 @@ def load_labeled_findings(labels_path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("models", nargs="+")
+    ap.add_argument("models", nargs="*")
     ap.add_argument("--url", default="http://localhost:11434/v1")
+    ap.add_argument(
+        "--command", action="append", default=[],
+        help="subprocess adjudicator, repeatable "
+        "(e.g. --command 'claude -p --model claude-haiku-4-5-20251001')",
+    )
     ap.add_argument(
         "--labels",
         default=os.path.join(os.path.dirname(__file__), "labels.json"),
@@ -60,8 +65,11 @@ def main():
     labeled, functions = load_labeled_findings(args.labels)
     print(f"{len(labeled)} labeled findings\n")
 
-    for model in args.models:
-        client = LLMClient(args.url, model, api_key=os.environ.get("PERF_LINT_LLM_KEY"))
+    backends = [(m, LLMClient(args.url, m, api_key=os.environ.get("PERF_LINT_LLM_KEY")))
+                for m in args.models]
+    backends += [(c, CommandClient(c, timeout=180.0)) for c in args.command]
+
+    for model, client in backends:
         t0 = time.time()
         judged = adjudicate([f for f, _ in labeled], client, functions)
         elapsed = time.time() - t0

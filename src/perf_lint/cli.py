@@ -116,6 +116,12 @@ def main() -> None:
         help="OpenAI-compatible base URL (env: PERF_LINT_LLM_URL, "
         "default: http://localhost:11434/v1)",
     )
+    ap.add_argument(
+        "--llm-command", default=None,
+        help="subprocess adjudicator: prompt on stdin, verdict on stdout "
+        "(e.g. 'claude -p --model claude-haiku-4-5-20251001'); "
+        "env: PERF_LINT_LLM_COMMAND. Takes precedence over --llm-model/--llm-url",
+    )
     args = ap.parse_args()
 
     config: Config = load_config(args.paths)
@@ -124,6 +130,9 @@ def main() -> None:
     llm_url = (
         args.llm_url or os.environ.get("PERF_LINT_LLM_URL") or config.llm_url
         or "http://localhost:11434/v1"
+    )
+    llm_command = (
+        args.llm_command or os.environ.get("PERF_LINT_LLM_COMMAND") or config.llm_command
     )
 
     findings, functions = run(args.paths, config.exclude)
@@ -138,12 +147,16 @@ def main() -> None:
         title = f"perf-lint: new findings vs {args.diff}:"
     suppressed = None
     if args.adjudicate:
-        if not llm_model:
-            ap.error("--adjudicate requires --llm-model, PERF_LINT_LLM_MODEL, "
-                     "or llm_model in .perf-lint.toml")
-        from perf_lint.adjudicate import LLMClient, adjudicate
+        from perf_lint.adjudicate import CommandClient, LLMClient, adjudicate
 
-        client = LLMClient(llm_url, llm_model, api_key=os.environ.get("PERF_LINT_LLM_KEY"))
+        if llm_command:
+            client = CommandClient(llm_command)
+        elif llm_model:
+            client = LLMClient(llm_url, llm_model, api_key=os.environ.get("PERF_LINT_LLM_KEY"))
+        else:
+            ap.error("--adjudicate requires --llm-command, --llm-model, or the "
+                     "PERF_LINT_LLM_COMMAND / PERF_LINT_LLM_MODEL env var / "
+                     "llm_command / llm_model in .perf-lint.toml")
         judged = adjudicate(findings, client, functions)
         for f, v in judged:
             if v.keep and v.label == "WRONG":

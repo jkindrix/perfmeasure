@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
+import subprocess
 import urllib.request
 from dataclasses import dataclass
 
@@ -86,6 +88,29 @@ class LLMClient:
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             data = json.load(resp)
         return data["choices"][0]["message"]["content"]
+
+
+class CommandClient:
+    """Runs a subprocess adjudicator: prompt on stdin, verdict on stdout.
+
+    Enables any CLI LLM as a backend — e.g. `claude -p --model <m>` (covered by
+    a Claude subscription), `ollama run <m>`, or the `llm` CLI.
+    """
+
+    def __init__(self, command: str, timeout: float = 120.0):
+        self.argv = shlex.split(command)
+        self.timeout = timeout
+
+    def complete(self, prompt: str) -> str:
+        result = subprocess.run(
+            self.argv, input=prompt, capture_output=True, text=True,
+            timeout=self.timeout,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"command exited {result.returncode}: {result.stderr.strip()[:200]}"
+            )
+        return result.stdout
 
 
 def build_prompt(

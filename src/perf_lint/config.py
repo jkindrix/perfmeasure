@@ -18,6 +18,7 @@ class Config:
     fail_on: str = "med"  # "high" | "med" | "never"
     llm_model: str | None = None
     llm_url: str | None = None
+    llm_command: str | None = None
 
 
 def load_config(paths: list[str]) -> Config:
@@ -36,5 +37,6 @@ def load_config(paths: list[str]) -> Config:
                 fail_on=data.get("fail_on", "med"),
                 llm_model=data.get("llm_model"),
                 llm_url=data.get("llm_url"),
+                llm_command=data.get("llm_command"),
             )
     return Config()

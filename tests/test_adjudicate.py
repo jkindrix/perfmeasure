@@ -134,3 +134,27 @@ def test_suppressed_findings_shown_without_verbose(tmp_path):
     assert len(supp_rows) == 1
     assert supp_rows[0]["file"] == "b.py"
     assert supp_rows[0]["suppressed_reason"] == "[BENIGN] tiny"
+
+
+def test_command_client_roundtrips_stdin_to_stdout():
+    from perf_lint.adjudicate import CommandClient
+    client = CommandClient("cat")
+    assert client.complete('{"verdict": "BENIGN", "reason": "x"}') == '{"verdict": "BENIGN", "reason": "x"}'
+
+
+def test_command_client_raises_on_nonzero_exit():
+    from perf_lint.adjudicate import CommandClient
+    import pytest
+    client = CommandClient("false")
+    with pytest.raises(RuntimeError):
+        client.complete("anything")
+
+
+def test_command_client_error_fails_open(tmp_path):
+    # a failing command must keep the finding, like any transport error
+    from perf_lint.adjudicate import CommandClient
+    f = _finding(tmp_path)
+    judged = adjudicate([f], CommandClient("false"))
+    (_, verdict), = judged
+    assert verdict.label == UNADJUDICATED
+    assert verdict.keep
