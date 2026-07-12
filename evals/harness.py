@@ -61,16 +61,28 @@ def main() -> int:
     elif not shutil.which("cargo"):
         print("# cargo not found: Rust corpus skipped", file=sys.stderr)
     print(f"# interpreter: {interp}")
-    by_name = {r.fid.rpartition("::")[2]: r for r in reports}
 
-    rows, failures = [], []
+    def find_report(key):
+        """An expected key must identify exactly ONE report — suffix-matched
+        so keys stay readable while same-named unscored fns (every crate
+        has several `new`s) collide freely."""
+        matches = [r for r in reports
+                   if r.fid == key or r.fid.endswith("::" + key)
+                   or r.fid.endswith("." + key)]
+        if len(matches) > 1:
+            raise SystemExit(
+                f"error: expected key {key!r} matches multiple reports: "
+                + ", ".join(m.fid for m in matches))
+        return matches[0] if matches else None
+
+    rows, failures, widths = [], [], []
     exact = ambig_ok = time_total = 0
     space_ok = space_total = 0
     undrv_ok = undrv_total = 0
     for name, exp in EXPECTED.items():
         if args.only and name != args.only:
             continue
-        r = by_name.get(name)
+        r = find_report(name)
         if r is None:
             failures.append(f"{name}: not measured at all")
             rows.append((name, "MISSING", "", "FAIL"))
@@ -89,6 +101,7 @@ def main() -> int:
 
         time_total += 1
         verdicts = []
+        widths.append(max(1, len(r.time_candidates)))
         accepted = exp.get("time_any", [exp["time"]])
         t_exact = r.time_cls == exp["time"]
         t_ok = (t_exact or r.time_cls in accepted
@@ -138,11 +151,12 @@ def main() -> int:
     for name, t, s, verdict in rows:
         print(f"{name:<{width}}  T={t:<24} S={s:<10} {verdict}")
     print(f"\ntime:  {ambig_ok}/{time_total} pass "
-          f"({exact}/{time_total} exact, rest ambiguous-contains-truth)")
+          f"({exact}/{time_total} exact, rest ambiguous-contains-truth; "
+          f"mean ambiguity width {sum(widths) / max(1, len(widths)):.2f})")
     if space_total:
         print(f"space: {space_ok}/{space_total} pass")
     if undrv_total:
-        print(f"undrivable precision: {undrv_ok}/{undrv_total}")
+        print(f"undrivable recall: {undrv_ok}/{undrv_total}")
     print(f"wall: {time.time() - t0:.0f}s")
     if failures:
         print("\nFAILURES:")

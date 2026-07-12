@@ -1,6 +1,6 @@
 [project]
 name = "perfmeasure"
-version = "0.1.0"
+version = "0.2.0"
 description = "Empirical complexity measurement: runs functions at growing input sizes and curve-fits time and space to Big-O classes"
 requires-python = ">=3.10"
 dependencies = [

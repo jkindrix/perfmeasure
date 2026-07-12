@@ -35,7 +35,7 @@ except ImportError:                      # pragma: no cover
 
 PROTOCOL_VERSION = 1
 SPEC_TYPES = ["list_int", "list_float", "list_str", "list_list_int", "str_",
-              "bytes_", "dict_si", "set_int", "int_mag", "bool_"]
+              "bytes_", "dict_si", "dict_ii", "set_int", "int_mag", "bool_"]
 SHAPES = ["random", "sorted", "reversed", "dup_heavy", "all_equal", "magnitude"]
 BATCH_THRESHOLD_S = 10e-6   # calls faster than this are timed in batches
 BATCH_TARGET_S = 200e-6
@@ -149,8 +149,10 @@ def _map_hint(hint) -> tuple[str | None, str]:
             return "list_list_int", ""
         return None, f"element type {args[0]!r}"
     if origin in (dict, abc.Mapping):
-        if not args or (args[0] in (str, int) and args[1] is int):
+        if not args or args == (str, int):
             return "dict_si", ""
+        if args == (int, int):
+            return "dict_ii", ""
         return None, f"dict types {args!r}"
     if origin in (set, frozenset):
         if not args or args[0] is int:
@@ -419,6 +421,11 @@ def materialize(spec):
     if tag == "list_list_int":
         if shape == "all_equal":
             return [[7] * INNER_LIST_LEN for _ in range(size)]
+        if shape == "dup_heavy":
+            pool = [[rng.randrange(-2**31, 2**31)
+                     for _ in range(INNER_LIST_LEN)]
+                    for _ in range(max(1, size // 16))]
+            return [list(rng.choice(pool)) for _ in range(size)]
         return [[rng.randrange(-2**31, 2**31) for _ in range(INNER_LIST_LEN)]
                 for _ in range(size)]
     if tag == "str_":
@@ -435,6 +442,8 @@ def materialize(spec):
     if tag == "bytes_":
         if shape == "all_equal":
             return b"a" * size
+        if shape == "dup_heavy":
+            return bytes(rng.choice(b"abcd") for _ in range(size))
         b = [rng.randrange(256) for _ in range(size)]
         if shape == "sorted":
             b = sorted(b)
@@ -450,6 +459,15 @@ def materialize(spec):
                     for i in range(size)}
         return {f"k{rng.randrange(2**60):015x}{i}": rng.randrange(2**31)
                 for i in range(size)}
+    if tag == "dict_ii":
+        if shape == "sorted":
+            return {i: rng.randrange(2**31) for i in range(size)}
+        if shape == "dup_heavy":
+            pool = [rng.randrange(64) for _ in range(max(1, size // 16))]
+            keys = rng.sample(range(max(size * 4, 4)), size)
+            return {k: rng.choice(pool) for k in keys}
+        return {k: rng.randrange(2**31)
+                for k in rng.sample(range(max(size * 4, 4)), size)}
     if tag == "set_int":
         return set(rng.sample(range(max(size * 4, 4)), size))
     raise ValueError(f"unknown spec_type {tag!r}")

@@ -153,7 +153,7 @@ impl RsScaler {
         xs.iter().map(|x| x.wrapping_mul(self.factor + 2)).collect()
     }
 
-    pub fn rs_pair_count(&self, xs: &[i64]) -> i64 {
+    pub fn rs_scaled_pair_count(&self, xs: &[i64]) -> i64 {
         let mut count = 0;
         for a in xs {
             for b in xs {

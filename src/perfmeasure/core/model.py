@@ -7,8 +7,11 @@ never emits an unlabeled guess and never silently omits a function.
 from __future__ import annotations
 
 import math
+import platform
 from dataclasses import dataclass, field
 from typing import Any, Callable
+
+TOOL_VERSION = "0.2.0"
 
 # --- complexity classes, ordered by growth ---------------------------------
 
@@ -55,7 +58,8 @@ TAG_SHAPES: dict[str, list[str]] = {
     "list_list_int": ["random", "dup_heavy", "all_equal"],
     "str_": SHAPES,
     "bytes_": ["random", "sorted", "reversed", "dup_heavy", "all_equal"],
-    "dict_si": ["random", "sorted", "dup_heavy"],
+    "dict_si": ["random", "sorted", "dup_heavy"],   # str keys -> int values
+    "dict_ii": ["random", "sorted", "dup_heavy"],   # int keys -> int values
     "set_int": ["random"],
     "int_mag": ["magnitude"],
 }
@@ -195,12 +199,16 @@ class FunctionReport:
             "per_shape": [
                 {
                     "shape": s.shape,
-                    "time_cls": s.time_fit.cls if s.time_fit else None,
-                    "space_cls": s.space_fit.cls if s.space_fit else None,
+                    "time": _fit_json(s.time_fit),
+                    "space": _fit_json(s.space_fit),
                     "stop_reason": s.stop_reason,
                     "points": [
                         {"n": p.n, "seconds": p.seconds, "reps": p.reps,
-                         "peak_bytes": p.peak_bytes, "batched": p.batched}
+                         "first_seconds": p.first_seconds,
+                         "warmup_seconds": p.warmup_seconds,
+                         "peak_bytes": p.peak_bytes,
+                         "ret_deepsize": p.ret_deepsize,
+                         "batched": p.batched}
                         for p in s.points
                     ],
                     "failures": s.failures,
@@ -210,5 +218,14 @@ class FunctionReport:
             "budget": {"wall_used_s": round(self.wall_used_s, 3),
                        "max_n_reached": self.max_n_reached},
             "flags": self.flags,
-            "environment": self.environment,
+            "environment": {**self.environment,
+                            "tool_version": TOOL_VERSION,
+                            "platform": platform.platform()},
         }
+
+
+def _fit_json(fit: "FitResult | None") -> dict[str, Any] | None:
+    if fit is None:
+        return None
+    return {"cls": fit.cls, "candidates": fit.candidates,
+            "margin": fit.margin, "reason": fit.reason}

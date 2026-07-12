@@ -143,7 +143,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
     if args.json:
-        print(render_json(reports))
+        if summary is not None:
+            import json as _json
+            from perfmeasure.core.report import reports_json
+            print(_json.dumps({"functions": reports_json(reports),
+                               "summary": summary}, indent=2))
+        else:
+            print(render_json(reports))
     else:
         print(f"# interpreter: {interp}")
         print(render_human(reports, verbose=args.verbose))

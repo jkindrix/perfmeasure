@@ -188,7 +188,7 @@
     }
   },
   "src/perfmeasure": {
-    "functions": 60,
+    "functions": 61,
     "measured": 14,
     "reasons": {
       "no_scalable_params": 11,
@@ -206,7 +206,7 @@
       "param 'points'": 1,
       "param 'wall_cost'": 1,
       "param 'seconds'": 1,
-      "param 'reports'": 2,
+      "param 'reports'": 3,
       "param 'extensions'": 1
     }
   }

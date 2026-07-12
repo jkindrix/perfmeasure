@@ -185,12 +185,34 @@ fn gen_bytes(spec: &Spec) -> Vec<u8> {
     v
 }
 
-fn gen_map(spec: &Spec) -> std::collections::HashMap<i64, i64> {
+fn gen_map_ii(spec: &Spec) -> std::collections::HashMap<i64, i64> {
     let n = spec.size as usize;
     let mut r = Rng(spec.seed);
     let mut m = std::collections::HashMap::with_capacity(n);
+    if spec.shape == "sorted" {
+        for i in 0..n {
+            m.insert(i as i64, r.next() as i64);
+        }
+        return m;
+    }
     while m.len() < n {
         m.insert(r.next() as i64, r.next() as i64);
+    }
+    m
+}
+
+fn gen_map_si(spec: &Spec) -> std::collections::HashMap<String, i64> {
+    let n = spec.size as usize;
+    let mut r = Rng(spec.seed);
+    let mut m = std::collections::HashMap::with_capacity(n);
+    if spec.shape == "sorted" {
+        for i in 0..n {
+            m.insert(format!("k{i:012}"), r.next() as i64);
+        }
+        return m;
+    }
+    while m.len() < n {
+        m.insert(format!("k{:015x}", r.next()), r.next() as i64);
     }
     m
 }
@@ -231,9 +253,20 @@ fn gen_list_f64(spec: &Spec) -> Vec<f64> {
 fn gen_list_list(spec: &Spec) -> Vec<Vec<i64>> {
     let n = spec.size as usize;
     let mut r = Rng(spec.seed);
-    (0..n)
-        .map(|_| (0..16).map(|_| r.next() as i64).collect())
-        .collect()
+    match spec.shape.as_str() {
+        "all_equal" => vec![vec![7; 16]; n],
+        "dup_heavy" => {
+            let pool: Vec<Vec<i64>> = (0..(n / 16).max(1))
+                .map(|_| (0..16).map(|_| r.next() as i64).collect())
+                .collect();
+            (0..n)
+                .map(|_| pool[(r.next() as usize) % pool.len()].clone())
+                .collect()
+        }
+        _ => (0..n)
+            .map(|_| (0..16).map(|_| r.next() as i64).collect())
+            .collect(),
+    }
 }
 
 fn gen_set(spec: &Spec) -> std::collections::HashSet<i64> {
@@ -391,7 +424,8 @@ fn main() {
         "capabilities": {
             "spec_types": ["list_int", "list_float", "list_str",
                             "list_list_int", "str_", "bytes_", "set_int",
-                            "int_mag", "dict_si", "bool_", "duration_ms"],
+                            "int_mag", "dict_si", "dict_ii", "bool_",
+                            "duration_ms"],
             "shapes": ["random", "sorted", "reversed", "dup_heavy",
                         "all_equal", "magnitude"],
             "memory": "counting_allocator",

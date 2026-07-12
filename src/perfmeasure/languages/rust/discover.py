@@ -61,8 +61,10 @@ TYPE_WHITELIST: dict[str, tuple] = {
     "&[usize]": ("list_int", "borrow_slice", "usize"),
     "&[f32]": ("list_float", "borrow_slice", "f32"),
     "Vec<f32>": ("list_float", "own", "f32"),
-    "&HashMap<i64,i64>": ("dict_si", "borrow"),
-    "HashMap<i64,i64>": ("dict_si", "own"),
+    "&HashMap<i64,i64>": ("dict_ii", "borrow"),
+    "HashMap<i64,i64>": ("dict_ii", "own"),
+    "&HashMap<String,i64>": ("dict_si", "borrow"),
+    "HashMap<String,i64>": ("dict_si", "own"),
 }
 
 # rust type per tag, used by the code generator for local declarations
@@ -72,7 +74,8 @@ DECL_TYPES = {"list_int": "Vec<i64>", "list_str": "Vec<String>",
               "set_int": "std::collections::HashSet<i64>",
               "bool_": "bool",
               "duration_ms": "std::time::Duration",
-              "dict_si": "std::collections::HashMap<i64,i64>"}
+              "dict_ii": "std::collections::HashMap<i64,i64>",
+              "dict_si": "std::collections::HashMap<String,i64>"}
 
 
 def _normalize(type_text: str) -> str:
@@ -172,8 +175,8 @@ class Ctors:
         mod_path, param_types, ret = self.new_sigs[path]
         name = path.rsplit("::", 1)[1]
         if not (ret in ("Self", name)
-                or ret.startswith((f"Result<Self", f"Result<{name}",
-                                   f"Option<Self", f"Option<{name}"))):
+                or ret.startswith(("Result<Self", f"Result<{name}",
+                                   "Option<Self", f"Option<{name}"))):
             return None
         args = []
         for t in param_types:
@@ -504,7 +507,7 @@ def _describe(node, path, crate, fid_path, module_ctx, module_pub,
                     type_ref = ctor
         detail = ""
         if entry is None:
-            detail = (f"filesystem path (I/O domain, not generated)"
+            detail = ("filesystem path (I/O domain, not generated)"
                       if norm in ("&Path", "PathBuf", "&PathBuf")
                       else f"unsupported type {raw!r}")
         pinfo = {"name": pname_node.text.decode(),

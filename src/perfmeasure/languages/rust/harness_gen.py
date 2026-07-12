@@ -42,7 +42,8 @@ codegen-units = 16
 """
 
 _GEN = {"list_int": "shaped_i64", "list_str": "gen_list_str",
-        "str_": "gen_string", "bytes_": "gen_bytes", "dict_si": "gen_map",
+        "str_": "gen_string", "bytes_": "gen_bytes",
+        "dict_ii": "gen_map_ii", "dict_si": "gen_map_si",
         "list_float": "gen_list_f64", "list_list_int": "gen_list_list",
         "set_int": "gen_set", "bool_": "gen_bool",
         "duration_ms": "gen_duration"}

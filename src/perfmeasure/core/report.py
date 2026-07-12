@@ -42,5 +42,9 @@ def render_human(reports: list[FunctionReport], verbose: bool = False) -> str:
     return "\n".join(lines)
 
 
+def reports_json(reports: list[FunctionReport]) -> list[dict]:
+    return [r.to_json() for r in reports]
+
+
 def render_json(reports: list[FunctionReport]) -> str:
-    return json.dumps([r.to_json() for r in reports], indent=2)
+    return json.dumps(reports_json(reports), indent=2)

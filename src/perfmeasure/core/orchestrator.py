@@ -39,6 +39,7 @@ class _Run:
     spread_flags: int = 0
     mutates: bool = False
     first_probe_timeout: bool = False
+    shapes_skipped: int = 0          # deadline hit before these shapes ran
     rejected: str | None = None      # exception message at the first size
 
 
@@ -82,6 +83,8 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
     report.max_n_reached = max(
         (p.n for s in run.shapes for p in s.points), default=0)
     report.wall_used_s = time.perf_counter() - started
+    if run.shapes_skipped:
+        report.flags["deadline_shapes_skipped"] = run.shapes_skipped
     # hello is only populated after the first request; refresh now
     report.environment = {"runtime": session.hello.get("runtime", "?")}
     report.allocator = session.hello.get(
@@ -109,7 +112,12 @@ def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
     started = time.perf_counter()
     for i, shape in enumerate(drive.shapes):
         remaining = budget.per_function_s - (time.perf_counter() - started)
-        shape_budget = max(0.5, remaining / (len(drive.shapes) - i))
+        if remaining <= 0.05:
+            # deadline: --budget is a promise, not a suggestion; skipped
+            # shapes are counted, never silently absorbed by a floor
+            run.shapes_skipped = len(drive.shapes) - i
+            break
+        shape_budget = remaining / (len(drive.shapes) - i)
         ladder = ShapeLadder(n0=n0, budget_s=shape_budget, n_max=n_max,
                              per_call_soft_s=budget.per_call_soft_s)
         result = ShapeResult(shape=shape, points=[])

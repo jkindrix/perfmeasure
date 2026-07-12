@@ -53,7 +53,8 @@ class ShapeLadder:
     def charge(self, wall_cost: float) -> None:
         self.spent_s += wall_cost
 
-    def force_backfill(self, failed_n: int, reason: str) -> bool:
+    def force_backfill(self, failed_n: int, reason: str,
+                       grace_s: float | None = None) -> bool:
         """A size failed (timeout/exception): switch to backfilling midpoints
         so steep functions still reach a fittable point count. Returns False
         if already backfilling (second failure -> caller should stop)."""
@@ -63,10 +64,11 @@ class ShapeLadder:
         self._backfilling = True
         self.stop_reason = reason
         # the failure (e.g. a hard timeout) may have consumed the whole
-        # shape budget; grant a small bounded grace so the cheap midpoints
-        # that rescue the fit can still run
-        self.budget_s = max(self.budget_s,
-                            self.spent_s + 2.0 * self.per_call_soft_s)
+        # shape budget; grant a bounded grace so the midpoints that rescue
+        # the fit still run even under machine load (an eval flaked here)
+        if grace_s is None:
+            grace_s = 4.0 * self.per_call_soft_s
+        self.budget_s = max(self.budget_s, self.spent_s + grace_s)
         return True
 
     def next_size(self) -> int | None:

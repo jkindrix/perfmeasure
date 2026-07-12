@@ -54,7 +54,7 @@ class RunnerSession:
         self.hello = hello
 
     def _pump(self, stream, is_stdout: bool) -> None:
-        out, proc = self._out, self._proc
+        out = self._out
         for line in stream:
             if is_stdout:
                 out.put(line)

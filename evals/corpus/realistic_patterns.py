@@ -64,6 +64,13 @@ def matrix_row_sums(rows: list[list[int]]) -> list[int]:
     return [sum(r) for r in rows]
 
 
+def dict_ii_lookup(d: dict[int, int], keys: list[int]) -> int:
+    acc = 0
+    for k in keys:
+        acc += d.get(k, 0)
+    return acc
+
+
 def intersect_sets(a: set[int], xs: list[int]) -> int:
     count = 0
     for x in xs:

@@ -7,6 +7,14 @@ allocation, and curve-fitting both to a Big-O class. Every answer carries
 a provenance label — nothing is silently guessed, nothing is silently
 omitted.
 
+> **Trusted code only.** perfmeasure imports, constructs, and executes
+> the target's code with your full user privileges — file system,
+> network, subprocesses. The runner subprocess boundary provides protocol
+> stability and hard-kill containment, **not** an OS sandbox. Do not
+> point it at code you would not run yourself. Rust measurement
+> additionally requires a Unix platform (the harness uses fd-level
+> stream redirection).
+
 ```sh
 perfmeasure fn path/to/file.py::function     # measure one Python function
 perfmeasure fn path/to/crate::module::func   # measure one Rust pub fn
@@ -69,12 +77,14 @@ Provenance labels: `MEASURED` | `AMBIGUOUS(candidates)` |
 ## Accuracy
 
 The tool is itself evaluated against a ground-truth corpus of
-known-complexity functions (`python evals/harness.py`): 68 functions
-across Python and Rust, O(1) through O(2ⁿ) — typed, unhinted (probing),
-mutating, memoized, cache-bound, panicking, and undrivable-by-design.
-Current numbers: **60/60 time classes** (39 exact, rest
-ambiguous-containing-truth), **16/16 space classes**, **6/6 undrivable
-precision**.
+known-complexity functions (`python evals/harness.py`) spanning Python
+and Rust, O(1) through O(2ⁿ) — typed, unhinted (probing), mutating,
+memoized, cache-bound, panicking, methods, constructed instances, and
+undrivable-by-design. Current run: **70/70 time classes** (43 exact,
+rest ambiguous-containing-truth, mean ambiguity width 1.36), **18/18
+space classes**, **7/7 undrivable recall**. Drivability on real
+projects is tracked separately as a regression metric
+(`python evals/wild.py`).
 
 ## Honest limits
 
