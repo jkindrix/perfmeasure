@@ -44,9 +44,17 @@ def variants(desc: FunctionDescriptor) -> list[tuple[int, bool]]:
     collection param is the driver."""
     active = [p for p in desc.params if not p.omitted]
     scalable = [p for p in active if p.spec_type in SCALABLE_TAGS]
-    has_fixed = (any(p.spec_type not in MAGNITUDE_TAGS for p in scalable)
-                 and any(p.spec_type in MAGNITUDE_TAGS for p in scalable))
-    ivs = range(FIXED_VARIANTS) if has_fixed else (0,)
+    coll = any(p.spec_type not in MAGNITUDE_TAGS for p in scalable)
+    ints = any(p.spec_type in MAGNITUDE_TAGS for p in scalable)
+    recv = bool(desc.receiver and desc.receiver_fill)
+    # the half-of variant needs a param driver to halve against, so a
+    # receiver-only drive walks just the 1/0 int strategies
+    if ints and coll:
+        ivs = range(FIXED_VARIANTS)
+    elif ints and recv:
+        ivs = range(2)
+    else:
+        ivs = (0,)
     opts = (False, True) if _opt_flippable(desc) else (False,)
     return [(iv, opt) for opt in opts for iv in ivs]
 
@@ -74,8 +82,13 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0,
     # (a Duration is a timeout — scaling it would measure the sleep)
     fixed_other = [p for p in active if p.spec_type in FIXED_TAGS]
 
+    # a fillable receiver is a collection-class driver: it scales with the
+    # joint n, and ints alongside it are held fixed like any collection
+    recv_scaled = bool(desc.receiver and desc.receiver_fill)
     if collections:
         drivers, fixed_ints = collections, ints
+    elif recv_scaled:
+        drivers, fixed_ints = [], ints
     elif ints:
         drivers, fixed_ints = ints, []
     else:
@@ -86,9 +99,13 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0,
         for s in TAG_SHAPES[p.spec_type]:
             if s not in shapes:
                 shapes.append(s)
+    if recv_scaled and not shapes:
+        shapes = ["random"]        # receiver fill is random-content only
 
-    driver_names = [p.name for p in drivers]
-    first_driver_idx = next(i for i, p in enumerate(active) if p in drivers)
+    driver_names = ([f"self({desc.receiver_fill})"] if recv_scaled else []) \
+        + [p.name for p in drivers]
+    first_driver_idx = next((i for i, p in enumerate(active) if p in drivers),
+                            None)
     if fixed_variant == 0:
         fixed_desc = 1
     elif fixed_variant == 1:
@@ -136,9 +153,15 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0,
                 out.append(GenSpec(p.spec_type or "int_mag", "magnitude",
                                    fixed_desc,
                                    seed_for(desc.fid, "fixed", 0)))
+        if recv_scaled:
+            # trailing, so positional arg indices stay stable; sized and
+            # seeded like any generated input
+            out.append(GenSpec("recv_fill", "random", size,
+                               seed_for(f"{desc.fid}#self", "fill", size)))
         return out
 
     return DrivePlan(driver_params=driver_names, fixed_params=fixed_params,
                      shapes=shapes, specs=specs,
                      has_fixed_ints=has_fixed_ints,
-                     has_variants=len(variants(desc)) > 1), None
+                     has_variants=len(variants(desc)) > 1,
+                     receiver_scaled=recv_scaled), None

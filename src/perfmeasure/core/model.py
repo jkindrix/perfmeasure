@@ -110,6 +110,10 @@ class FunctionDescriptor:
                                       # "fresh": rebuilt per rep (the
                                       # runner decides which its language
                                       # semantics require)
+    receiver_fill: str | None = None  # len-verified strategy for building
+                                      # an instance of n items ("ctor",
+                                      # "update", ...); None = receiver
+                                      # can only be a fixed point
 
 
 @dataclass
@@ -124,6 +128,8 @@ class DrivePlan:
                                        # inputs for an identical rejection
     has_variants: bool = False         # any fallback dimension exists
                                        # (fixed ints, Option None->Some)
+    receiver_scaled: bool = False      # the receiver is filled at the
+                                       # joint n (methods vs receiver size)
 
 
 # --- measurement points and fits ---------------------------------------------

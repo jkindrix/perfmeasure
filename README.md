@@ -101,7 +101,7 @@ and Rust, O(1) through O(2ⁿ) — typed, unhinted (probing), mutating,
 memoized, cache-bound, panicking, methods, constructed instances, and
 undrivable-by-design.
 <!-- gate:begin (written by `python evals/harness.py --update-readme`; do not edit) -->
-Current run: **79/79 time classes** (60 exact, rest ambiguous-containing-truth, mean ambiguity width 1.59), **25/25 space classes**, **8/8 undrivable recall** — full gate in ~153 s.
+Current run: **92/92 time classes** (69 exact, rest ambiguous-containing-truth, mean ambiguity width 1.57), **28/28 space classes**, **10/10 undrivable recall** — full gate in ~166 s.
 <!-- gate:end -->
 Drivability on real projects is tracked separately as a regression
 metric (`python evals/wild.py`).
@@ -141,6 +141,18 @@ metric (`python evals/wild.py`).
   `state_retained_after_first_call` and a confidence demotion — later
   reps may have measured the cached path. Python memoizers are refit on
   first-call timings (`suspected_memoization`).
+- **Receiver-scaled methods are measured on the cold path.** When a
+  receiver type has a len-verified fill strategy (iterable constructor,
+  `update`/`extend`/`add`/`append`/`push`), methods are driven against
+  receivers of n items (`receiver_scaled`) — `SortedList.add` reads its
+  class in receiver size instead of a vacuous empty-instance O(1). But a
+  method that MUTATES the receiver — including one that only builds a
+  lazy internal cache (sortedcontainers' positional `_index`) — gets a
+  fresh instance per rep, so it is measured as a first call every time:
+  the warm amortized class may be lower than the reported cold one.
+  Containers with large fixed load factors (sqrt-list, wide B-trees)
+  honestly read a class low below `load²` elements — measured truth of
+  the tested regime, not the asymptote.
 - **Methods and instance params are measured against constructed
   state.** Methods and struct/class-typed params are driven with a fixed
   fresh instance built via `Default`, `new()`, unit structs, Python

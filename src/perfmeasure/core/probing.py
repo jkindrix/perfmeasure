@@ -118,6 +118,13 @@ def _accepts(session, desc, resolved, target_name, target_tag,
                 tag, shape, size,
                 protocol.seed_for(f"{desc.fid}#{p.name}", "probe", size)
             ).wire())
+        if desc.receiver and desc.receiver_fill:
+            # probe against a FILLED receiver: the ladder will drive one,
+            # and state-dependent methods reject on an empty instance
+            specs.append(GenSpec(
+                "recv_fill", "random", size,
+                protocol.seed_for(f"{desc.fid}#self", "probe", size)
+            ).wire())
         resp = session.request(
             protocol.call_msg(session.next_id(), desc.fid, specs, warmup=0,
                               max_repeats=1, min_total_ms=0,

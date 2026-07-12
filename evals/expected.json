@@ -327,5 +327,26 @@
   "passthrough": {
     "time": "O(1)",
     "space": "O(1)"
+  },
+  "SortedVec.add": {
+    "time": "O(n)",
+    "space": null,
+    "note": "insort: O(log n) cmps + O(n) memmove; shift dominates"
+  },
+  "SortedVec.rank": {
+    "time": "O(log n)",
+    "space": null
+  },
+  "IntBag.add": {
+    "time": "O(1)",
+    "space": null
+  },
+  "IntBag.has": {
+    "time": "O(1)",
+    "space": null
+  },
+  "SortedVec.sum_items": {
+    "time": "O(n)",
+    "space": null
   }
 }

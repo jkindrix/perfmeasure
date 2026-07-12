@@ -82,10 +82,15 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
 
     report.driver_params = drive.driver_params
     report.fixed_params = drive.fixed_params
-    if desc.receiver:
+    if desc.receiver and drive.receiver_scaled:
+        # the receiver is a driver: filled with n items per size (fresh
+        # per rep when the method mutates it)
+        report.flags["receiver_scaled"] = desc.receiver_fill
+    elif desc.receiver:
         report.fixed_params["self"] = desc.receiver + (
             " (fresh per rep)" if desc.receiver_mode == "fresh" else "")
-    if desc.receiver or any(p.spec_type == "instance_" for p in desc.params):
+    if (desc.receiver and not drive.receiver_scaled) \
+            or any(p.spec_type == "instance_" for p in desc.params):
         # measured against default-constructed instances: cost that depends
         # on instance state is invisible at this fixed point
         report.flags["fixed_instance_inputs"] = True
@@ -142,8 +147,10 @@ def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
                  drive: DrivePlan, budget: Budget, deadline: float,
                  hard_wall: float) -> _Run:
     run = _Run()
-    int_only = all(p.spec_type in ("int_mag", "float_mag")
-                   for p in desc.params if p.name in drive.driver_params)
+    int_only = (not drive.receiver_scaled
+                and all(p.spec_type in ("int_mag", "float_mag")
+                        for p in desc.params
+                        if p.name in drive.driver_params))
     n0 = N0_INT if int_only else N0_COLLECTION
     n_max = INT_N_MAX if int_only else N_MAX
     for i, shape in enumerate(drive.shapes):

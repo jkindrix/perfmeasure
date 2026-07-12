@@ -116,3 +116,25 @@ def test_opt_without_some_expr_stays_none():
     assert variants(d) == [(0, False)]
     p, _ = plan(d, opt_some=True)     # flip without an expr: stays None
     assert p.specs("random", 8)[1].type_tag == "opt_none"
+
+
+def test_receiver_fill_scales_and_holds_ints_fixed():
+    d = FunctionDescriptor(fid="f.py::C.add", file="f.py", line=1,
+                           params=[ParamInfo("value", "int_mag")],
+                           drivable=True, receiver="m:C",
+                           receiver_fill="ctor")
+    p, reason = plan(d)
+    assert reason is None
+    assert p.receiver_scaled and p.driver_params == ["self(ctor)"]
+    specs = p.specs("random", 64)
+    assert specs[-1].type_tag == "recv_fill" and specs[-1].size == 64
+    assert specs[0].size == 1          # int arg held fixed
+
+
+def test_receiver_without_fill_stays_fixed_point():
+    d = FunctionDescriptor(fid="f.py::C.scale", file="f.py", line=1,
+                           params=[ParamInfo("xs", "list_int")],
+                           drivable=True, receiver="m:C")
+    p, _ = plan(d)
+    assert not p.receiver_scaled
+    assert all(s.type_tag != "recv_fill" for s in p.specs("random", 8))

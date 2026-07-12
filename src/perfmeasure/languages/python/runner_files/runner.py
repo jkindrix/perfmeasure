@@ -376,6 +376,7 @@ def do_discover(req):
                     continue
                 desc = _describe_function(fid, m)   # bound: self already gone
                 desc["receiver"] = f"{cls.__module__}:{cls.__qualname__}"
+                desc["receiver_fill"] = _fill_strategy(cls)
                 functions.append(desc)
     return {"op": "result", "id": req["id"], "functions": functions}
 
@@ -396,12 +397,78 @@ def _resolve(fid):
     return _fn_cache[fid]
 
 
-def _callable_for(fid):
+def _callable_for(fid, recv_spec=None):
     fn = _resolve(fid)
     if isinstance(fn, tuple):
         _, cls, name = fn
-        return getattr(_synth_instance(cls), name)
+        inst = (_fill_instance(cls, recv_spec) if recv_spec is not None
+                else _synth_instance(cls))
+        return getattr(inst, name)
     return fn
+
+
+# --- receiver fill: scale methods against receiver SIZE, not emptiness ------
+
+_FILL_BULK = ("update", "extend")
+_FILL_ONE = ("add", "append", "push")
+_fill_cache: dict[type, str | None] = {}
+
+
+def _fill_strategy(cls) -> str | None:
+    """How to build an instance holding n items — or None. Conservative:
+    iterable ctor or standard container verbs only, and the result must
+    report len() == n, or receiver scaling would measure a fiction."""
+    if cls not in _fill_cache:
+        _fill_cache[cls] = _probe_fill(cls)
+    return _fill_cache[cls]
+
+
+def _probe_fill(cls) -> str | None:
+    probe = list(range(-8, 8))
+    def verified(inst):
+        try:
+            return len(inst) == len(probe)
+        except Exception:
+            return False
+    try:
+        if verified(cls(list(probe))):
+            return "ctor"
+    except Exception:
+        pass
+    for name in _FILL_BULK + _FILL_ONE:
+        if not callable(getattr(cls, name, None)):
+            continue
+        try:
+            inst = _synth_instance(cls)
+            if name in _FILL_BULK:
+                getattr(inst, name)(list(probe))
+            else:
+                meth = getattr(inst, name)
+                for x in probe:
+                    meth(x)
+            if verified(inst):
+                return name
+        except Exception:
+            continue
+    return None
+
+
+def _fill_instance(cls, spec):
+    strat = _fill_strategy(cls)
+    if strat is None:
+        raise ValueError(f"no fill strategy for {cls.__qualname__}")
+    rng = random.Random(spec["seed"])
+    items = _rand_i64s(rng, spec["size"])
+    if strat == "ctor":
+        return cls(items)
+    inst = _synth_instance(cls)
+    if strat in _FILL_BULK:
+        getattr(inst, strat)(items)
+    else:
+        meth = getattr(inst, strat)
+        for x in items:
+            meth(x)
+    return inst
 
 
 def _receiver_fingerprint(fn):
@@ -598,15 +665,19 @@ def _deepsize(obj, depth=0):
 def do_call(req):
     started = time.perf_counter()
     fid = req["fid"]
+    # the trailing recv_fill spec (if any) sizes the RECEIVER; it is never
+    # a positional argument
+    specs = [s for s in req["inputs"] if s["spec_type"] != "recv_fill"]
+    recv_spec = next((s for s in req["inputs"]
+                      if s["spec_type"] == "recv_fill"), None)
     try:
-        fn = _callable_for(fid)
+        fn = _callable_for(fid, recv_spec)
     except AttributeError:
         return error(req["id"], fid, "not_found",
                      traceback.format_exc(limit=2).strip()[-300:])
     except BaseException:
         return error(req["id"], fid, "exception",
                      traceback.format_exc(limit=3).strip()[-500:])
-    specs = req["inputs"]
     try:
         args = _materialize_all(specs)
     except Exception:
@@ -648,7 +719,7 @@ def do_call(req):
             # the method mutates self: bind a FRESH instance per rep
             # (untimed) so receiver state never accumulates across reps
             notes.append("mutates_receiver")
-            fn = _callable_for(fid)
+            fn = _callable_for(fid, recv_spec)
 
         timings, batched = [], False
         if "time" in measure:
@@ -673,7 +744,7 @@ def do_call(req):
                                     != recv_before)
                     if recv_mutates:
                         notes.append("mutates_receiver")
-                        fn = _callable_for(fid)
+                        fn = _callable_for(fid, recv_spec)
                 batch = 1
                 if first < BATCH_THRESHOLD_S and not mutates \
                         and not recv_mutates:
@@ -690,7 +761,7 @@ def do_call(req):
                     if mutates:
                         args = _materialize_all(specs)  # untimed
                     if recv_mutates:
-                        fn = _callable_for(fid)         # untimed
+                        fn = _callable_for(fid, recv_spec)  # untimed
                     t = _timed_batch(fn, args, batch)
                     timings.append(t)
                     total += t * batch
@@ -702,7 +773,7 @@ def do_call(req):
             if mutates:
                 args = _materialize_all(specs)
             if recv_mutates:
-                fn = _callable_for(fid)
+                fn = _callable_for(fid, recv_spec)
             # GC paused like the time pass: a mid-call cycle collection
             # shrinks the traced peak nondeterministically, and class
             # inference needs the deterministic upper envelope. Cyclic-
