@@ -52,8 +52,19 @@ pub fn takes_mut(xs: &mut Vec<i64>) {
     xs.push(1);
 }
 
+pub fn count_zero_bytes(data: &[u8]) -> usize {
+    data.iter().filter(|b| **b == 0).count()
+}
+
 mod private_mod {
     pub fn hidden(xs: &[i64]) -> i64 {
+        xs.len() as i64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    pub fn test_helper(xs: &[i64]) -> i64 {
         xs.len() as i64
     }
 }

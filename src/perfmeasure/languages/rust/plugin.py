@@ -30,14 +30,16 @@ class RustPlugin(LanguagePlugin):
         return path.suffix in self.extensions or (
             path.is_dir() and (path / "Cargo.toml").exists())
 
-    def prepare(self, target: Path, log=print) -> list[dict]:
+    def prepare(self, target: Path, features: list[str] | None = None,
+                log=print) -> list[dict]:
         """Discover + build. Returns raw function dicts (including
         undrivable ones, with reasons) ready for descriptor conversion."""
         root = find_crate_root(target)
         crate = crate_name(root / "Cargo.toml")
         functions = discover_crate(root)
         if any(f["drivable"] for f in functions):
-            self._binary = build_harness(root, crate, functions, log=log)
+            self._binary = build_harness(root, crate, functions,
+                                         features=features, log=log)
         return functions
 
     def runner_command(self, target_root: Path) -> list[str]:

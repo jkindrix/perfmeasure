@@ -55,6 +55,10 @@ pub fn rs_count_char(s: &str) -> usize {
     s.chars().filter(|c| *c == 'a').count()
 }
 
+pub fn rs_count_zero_bytes(data: &[u8]) -> usize {
+    data.iter().filter(|b| **b == 0).count()
+}
+
 pub fn rs_map_lookup_all(m: &HashMap<i64, i64>, keys: &[i64]) -> i64 {
     let mut acc = 0;
     for k in keys {

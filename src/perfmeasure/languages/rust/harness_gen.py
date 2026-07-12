@@ -26,7 +26,7 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
-{crate} = {{ path = "{path}" }}
+{crate} = {{ path = "{path}"{features} }}
 serde = {{ version = "1", features = ["derive"] }}
 serde_json = "1"
 libc = "0.2"
@@ -42,7 +42,7 @@ codegen-units = 16
 """
 
 _GEN = {"list_int": "shaped_i64", "list_str": "gen_list_str",
-        "str_": "gen_string", "dict_si": "gen_map"}
+        "str_": "gen_string", "bytes_": "gen_bytes", "dict_si": "gen_map"}
 
 
 def _template() -> str:
@@ -104,8 +104,10 @@ def generate_main(functions: list[dict], crate: str) -> str:
                       .replace("{{TARGET_CRATE}}", crate)
 
 
-def cache_key(crate_root: Path, functions: list[dict]) -> str:
+def cache_key(crate_root: Path, functions: list[dict],
+              features: list[str]) -> str:
     h = hashlib.sha256()
+    h.update(repr(sorted(features)).encode())
     for name in ("Cargo.toml", "Cargo.lock"):
         f = crate_root / name
         if f.exists():
@@ -119,10 +121,11 @@ def cache_key(crate_root: Path, functions: list[dict]) -> str:
 
 
 def build_harness(crate_root: Path, crate: str, functions: list[dict],
-                  log=print) -> Path:
+                  features: list[str] | None = None, log=print) -> Path:
     """Returns the built binary path. Mutates `functions`: arms the compiler
     rejects get drivable=False + skip_reason=harness_compile_failed."""
-    key = cache_key(crate_root, functions)
+    features = features or []
+    key = cache_key(crate_root, functions, features)
     harness = CACHE_ROOT / key
     binary = harness / "target" / "release" / "perfmeasure_harness"
     dropped_file = harness / "dropped.json"
@@ -133,8 +136,12 @@ def build_harness(crate_root: Path, crate: str, functions: list[dict],
         return binary
     harness.mkdir(parents=True, exist_ok=True)
     (harness / "src").mkdir(exist_ok=True)
+    feat = ""
+    if features:
+        feat = ", features = [" + ", ".join(f'"{f}"' for f in features) + "]"
     (harness / "Cargo.toml").write_text(
-        CARGO_TOML.format(crate=crate, path=crate_root.resolve()))
+        CARGO_TOML.format(crate=crate, path=crate_root.resolve(),
+                          features=feat))
 
     all_dropped: set[str] = set()
     for attempt in range(2):

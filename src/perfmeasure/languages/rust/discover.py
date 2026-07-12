@@ -28,6 +28,9 @@ TYPE_WHITELIST: dict[str, tuple[str, str]] = {
     "Vec<String>": ("list_str", "own"),
     "&str": ("str_", "borrow"),
     "String": ("str_", "own"),
+    "&[u8]": ("bytes_", "borrow_slice"),
+    "&Vec<u8>": ("bytes_", "borrow"),
+    "Vec<u8>": ("bytes_", "own"),
     "usize": ("int_mag", "copy"),
     "u64": ("int_mag", "copy"),
     "i64": ("int_mag", "copy"),
@@ -39,7 +42,7 @@ TYPE_WHITELIST: dict[str, tuple[str, str]] = {
 
 # rust type per tag, used by the code generator for local declarations
 DECL_TYPES = {"list_int": "Vec<i64>", "list_str": "Vec<String>",
-              "str_": "String", "int_mag": "i64",
+              "str_": "String", "bytes_": "Vec<u8>", "int_mag": "i64",
               "dict_si": "std::collections::HashMap<i64,i64>"}
 
 
@@ -91,11 +94,22 @@ def _is_pub(node) -> bool:
     return vis is not None and vis.text == b"pub"
 
 
+def _cfg_test(attrs: list) -> bool:
+    return any(b"cfg" in a.text and b"test" in a.text for a in attrs)
+
+
 def _walk(node, path, crate, mod_path, src_root, out, module_pub):
+    pending_attrs = []
     for child in node.children:
+        if child.type == "attribute_item":
+            pending_attrs.append(child)
+            continue
+        attrs, pending_attrs = pending_attrs, []
         if child.type == "function_item":
             out.append(_describe(child, path, crate, mod_path, module_pub))
         elif child.type == "mod_item":
+            if _cfg_test(attrs):        # #[cfg(test)] mod: never reachable
+                continue
             name_node = child.child_by_field_name("name")
             if name_node is None:
                 continue

@@ -34,11 +34,12 @@ def _descriptor(raw: dict) -> FunctionDescriptor:
 
 
 def measure_target(file: str, qualname: str | None, budget: Budget,
-                   python: str | None = None, target_root: str | None = None):
+                   python: str | None = None, target_root: str | None = None,
+                   features: list[str] | None = None):
     """API entry: measure one function (or all drivable in a file).
     Returns (reports, interpreter_note)."""
     if file.endswith(".rs") or (Path(file) / "Cargo.toml").exists():
-        return _measure_rust(file, qualname, budget)
+        return _measure_rust(file, qualname, budget, features=features)
     file_path = Path(file).resolve()
     root = Path(target_root).resolve() if target_root else _guess_root(file_path)
     plugin = PythonPlugin(python=python)
@@ -62,11 +63,13 @@ def measure_target(file: str, qualname: str | None, budget: Budget,
     return reports, f"{interpreter} (via {how})"
 
 
-def _measure_rust(file: str, qualname: str | None, budget: Budget):
+def _measure_rust(file: str, qualname: str | None, budget: Budget,
+                  features: list[str] | None = None):
     from perfmeasure.languages.rust.plugin import RustPlugin, find_crate_root
     plugin = RustPlugin()
     root = find_crate_root(Path(file))
-    functions = plugin.prepare(Path(file), log=lambda m: print(m, file=sys.stderr))
+    functions = plugin.prepare(Path(file), features=features,
+                               log=lambda m: print(m, file=sys.stderr))
     if qualname:
         functions = [f for f in functions
                      if f["fid"] == qualname or f["fid"].endswith("::" + qualname)]
@@ -116,19 +119,24 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--json", action="store_true")
         p.add_argument("--verbose", action="store_true")
         p.add_argument("--python", help="target project's interpreter")
+        p.add_argument("--features",
+                       help="cargo features for the Rust harness "
+                            "(comma-separated)")
     args = parser.parse_args(argv)
 
     budget = Budget(per_function_s=args.budget)
+    features = args.features.split(",") if args.features else None
     try:
         if args.command == "fn":
             file, _, qualname = args.target.partition("::")
             reports, interp = measure_target(file, qualname or None, budget,
-                                             python=args.python)
+                                             python=args.python,
+                                             features=features)
             summary = None
         else:
             reports, interp, summary = scan_target(
                 args.target, budget, python=args.python,
-                exclude=args.exclude)
+                exclude=args.exclude, features=features)
     except (RuntimeError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
@@ -144,11 +152,13 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def scan_target(target: str, budget: Budget, python: str | None = None,
-                exclude: list[str] | None = None):
+                exclude: list[str] | None = None,
+                features: list[str] | None = None):
     from perfmeasure.core.scan import _summarize, collect_files, scan
     root = Path(target).resolve()
     if (root / "Cargo.toml").exists():
-        reports, note = _measure_rust(str(root), None, budget)
+        reports, note = _measure_rust(str(root), None, budget,
+                                      features=features)
         return reports, note, _summarize(reports, [])
     plugin = PythonPlugin(python=python)
     interpreter, how = plugin.resolve_interpreter(root)

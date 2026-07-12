@@ -7,6 +7,7 @@
   "rs_copy": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"], "space": "O(n)"},
   "rs_concat": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"], "space": "O(n)"},
   "rs_count_char": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"]},
+  "rs_count_zero_bytes": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"]},
   "rs_map_lookup_all": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"],
                         "note": "cache-bound random probes"},
   "rs_sort_copy": {"time": "O(n log n)", "space": "O(n)"},

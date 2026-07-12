@@ -168,6 +168,23 @@ fn gen_string(spec: &Spec) -> String {
     }
 }
 
+fn gen_bytes(spec: &Spec) -> Vec<u8> {
+    let n = spec.size as usize;
+    let mut r = Rng(spec.seed);
+    let mut v: Vec<u8> = match spec.shape.as_str() {
+        "all_equal" => vec![b'a'; n],
+        "dup_heavy" => (0..n).map(|_| b'a' + (r.next() % 4) as u8).collect(),
+        _ => (0..n).map(|_| r.next() as u8).collect(),
+    };
+    if spec.shape == "sorted" {
+        v.sort_unstable();
+    } else if spec.shape == "reversed" {
+        v.sort_unstable();
+        v.reverse();
+    }
+    v
+}
+
 fn gen_map(spec: &Spec) -> std::collections::HashMap<i64, i64> {
     let n = spec.size as usize;
     let mut r = Rng(spec.seed);
@@ -325,7 +342,8 @@ fn main() {
         "op": "hello", "protocol": 1, "language": "rust",
         "runtime": "rustc-built harness for {{TARGET_CRATE}}",
         "capabilities": {
-            "spec_types": ["list_int", "list_str", "str_", "int_mag", "dict_si"],
+            "spec_types": ["list_int", "list_str", "str_", "bytes_",
+                            "int_mag", "dict_si"],
             "shapes": ["random", "sorted", "reversed", "dup_heavy",
                         "all_equal", "magnitude"],
             "memory": "counting_allocator",

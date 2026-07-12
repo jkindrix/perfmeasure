@@ -32,3 +32,12 @@ def test_fids_are_full_paths():
     fns = _by_name()
     assert fns["sum_slice"]["fid"] == "tiny_crate::sum_slice"
     assert fns["hidden"]["fid"] == "tiny_crate::private_mod::hidden"
+
+
+def test_byte_slices_are_drivable():
+    p = _by_name()["count_zero_bytes"]["params"][0]
+    assert p["spec_type"] == "bytes_" and p["style"] == "borrow_slice"
+
+
+def test_cfg_test_modules_are_not_reported():
+    assert "test_helper" not in _by_name()
