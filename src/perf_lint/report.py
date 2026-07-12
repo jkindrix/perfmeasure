@@ -13,11 +13,12 @@ def render(
     findings: list[Finding],
     verbose: bool = False,
     suppressed: list[tuple[Finding, str]] | None = None,
+    title: str | None = None,
 ) -> str:
     shown = [f for f in findings if verbose or f.severity != UNKNOWN]
     shown.sort(key=lambda f: (f.file, f.line, _ORDER[f.severity]))
 
-    lines = ["perf-lint report:", ""]
+    lines = [title or "perf-lint report:", ""]
     for f in shown:
         lines.append(
             f"{f.file}:{f.line} [{f.severity}] {f.complexity} — "
