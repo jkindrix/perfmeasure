@@ -1,14 +1,30 @@
 [project]
 name = "perfmeasure"
-version = "0.5.0"
+version = "0.6.0"
 description = "Empirical complexity measurement: runs functions at growing input sizes and curve-fits time and space to Big-O classes"
+readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{ name = "Justin Kindrix" }]
 requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Benchmark",
+]
 dependencies = [
     "tree-sitter>=0.23",
     "tree-sitter-rust>=0.24.2",
 ]
+
+[project.urls]
+Repository = "https://github.com/jkindrix/perfmeasure"
+Changelog = "https://github.com/jkindrix/perfmeasure/blob/main/CHANGELOG.md"
 
 [project.scripts]
 perfmeasure = "perfmeasure.cli:main"

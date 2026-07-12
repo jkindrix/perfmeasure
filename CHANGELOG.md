@@ -1,5 +1,70 @@
 # Changelog
 
+## 0.6.0 (2026-07-12)
+
+Burn-down from a two-track external review: a body-of-work review
+(claims-vs-reality, publication hygiene) and a metrology audit that ran
+falsification experiments against ground-truth fixtures. The audit
+FALSIFIED one documented guarantee and surfaced two more
+confident-but-wrong output modes; all three shared a root cause — a
+single regime step inside the fitted window — and the fix targets the
+class, not the instances.
+
+- **Coefficient-step check** (the falsified guarantee): an allocator or
+  threshold event that steps the constant of the true class mid-ladder
+  (sort scratch buffers: 8 -> 16 B/elem) used to yield a
+  high-confidence wrong singleton one class up, because no fixed re-fit
+  window can dodge a step that may straddle any of them. The fitter now
+  detects the step signature itself — two flat per-point scale runs
+  split by one jump, which a genuinely higher class cannot produce —
+  keeps the true class in the candidates, names the step in the fit
+  reason, sets `coefficient_step_suspected`, and demotes confidence.
+  Pinned by a new corpus fixture (`step_alloc`) with an `expect_flag`
+  assertion, and by unit tests including the smooth-log-drift control.
+- **Space adjacency ratchet**: the gate's adjacency-only ratchet counted
+  time passes only, so space-side class inflation was structurally
+  unratcheted (the falsified case hid exactly there). Space passes that
+  exist only via `space_any` adjacency are now counted and capped
+  (`SPACE_ADJACENT_ONLY_MAX = 2`).
+- **Budget-truncated O(1) is named**: a time-O(1) verdict whose every
+  ladder was stopped by the budget — never by n_max or the data — now
+  carries `constant_within_budget_window` (with the window's max n) on
+  the headline line and a confidence demotion: a large constant can
+  mask a term that had no room to emerge. A true cheap O(1) reaches
+  n_max and never flags.
+- **Fit-defying timeouts surface**: a hard timeout above the fitted
+  window that the fitted class cannot explain (20x+ single-call overrun
+  against its own extrapolation, leaving headroom for warmup + reps +
+  the traced pass) is flagged `timeout_above_window` on the headline
+  line. A steep class that honestly outgrew the timeout predicts the
+  kill and stays quiet.
+- **Worst-shape ties break on measured cost**: same-class shapes were
+  tie-broken by iteration order (insertion sort read `worst@random`
+  while reversed measured 2x slower); ties now break on cost at the
+  largest size every tied shape reached, for time and space worst
+  shapes both. Gate gains positive `worst_shape` assertions.
+- **Confidence coherence**: non-measurements (UNDRIVABLE/TIMEOUT/ERROR)
+  report `confidence: null` instead of a vacuous default;
+  `untracked_alloc_suspected` now demotes confidence like every other
+  suspicion flag.
+- **Target-interpreter floor stated and tested**: Python targets need
+  >= 3.9 (`tracemalloc.reset_peak`, `random.randbytes`) — verified by
+  driving 3.8 (fails honestly, AttributeError in the failure records)
+  and 3.9 (measures end-to-end) via `--python`; CI pins the 3.9 floor
+  every run.
+- **Publication hygiene**: CI workflow (pytest + wheel build blocking;
+  the accuracy gate observational until it earns a CI track record);
+  full wheel metadata (readme, urls, authors, classifiers); prior art
+  now names zertyz/big-O and characterizes BigO(Bench)'s active
+  time+space framework fairly; the README states the eval-calibration
+  circularity (thresholds tuned on the same corpus the gate scores);
+  `--python`/`--features` warn instead of being silently ignored on the
+  wrong language; the wild gate prints its coverage and fails when zero
+  targets exist instead of passing vacuously; stale CLI docstring
+  rewritten; version sync (pyproject vs `TOOL_VERSION`) is now a test;
+  the instructions-channel variance claim was re-measured and corrected
+  (<2% worst-point run-to-run, previously stated <1%).
+
 ## 0.5.0 (2026-07-12)
 
 Burn-down round from field-testing against fresh real-world targets

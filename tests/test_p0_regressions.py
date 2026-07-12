@@ -41,3 +41,16 @@ def test_stdlib_shadowing_file_loads_the_actual_file():
         assert fns["marker_function"]["drivable"] is True
     finally:
         session.close()
+
+
+def test_tool_version_matches_pyproject():
+    # TOOL_VERSION lives in code (JSON records embed it) and pyproject
+    # (packaging) — two sources that must never drift
+    import re
+    from pathlib import Path
+
+    from perfmeasure.core.model import TOOL_VERSION
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    m = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE)
+    assert m, "pyproject.toml has no version line"
+    assert m.group(1) == TOOL_VERSION

@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: unit tests
+        run: uv run pytest -q
+      - name: build sdist + wheel
+        run: uv build
+      - name: target-interpreter floor (Python 3.9)
+        # README claims targets down to 3.9 work; prove it every run.
+        # grep fails the step if no function line was actually measured.
+        run: |
+          uv python install 3.9
+          uv run perfmeasure fn tests/fixtures/sample_target.py \
+            --python "$(uv python find 3.9)" --budget 8 | grep -E 'T=O'
+
+  eval-gate:
+    # The accuracy gate fits complexity classes from wall-time ladders;
+    # its ratchets (EXACT_FLOOR, width ceilings) are calibrated on a
+    # quiet dev machine. Shared CI runners are noisier, so this job is
+    # observational until it has a green track record — promote it to
+    # blocking (drop continue-on-error) after ~10 consecutive green runs.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: accuracy gate (Python + Rust corpus)
+        run: uv run python evals/harness.py
