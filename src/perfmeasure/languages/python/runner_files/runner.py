@@ -36,7 +36,8 @@ except ImportError:                      # pragma: no cover
 
 PROTOCOL_VERSION = 1
 SPEC_TYPES = ["list_int", "list_float", "list_str", "list_list_int", "str_",
-              "bytes_", "dict_si", "dict_ii", "set_int", "int_mag", "bool_"]
+              "bytes_", "dict_si", "dict_ii", "set_int", "int_mag",
+              "float_mag", "bool_"]
 SHAPES = ["random", "sorted", "reversed", "dup_heavy", "all_equal", "magnitude"]
 BATCH_THRESHOLD_S = 10e-6   # calls faster than this are timed in batches
 BATCH_TARGET_S = 200e-6
@@ -113,6 +114,12 @@ def _map_hint(hint) -> tuple[str | None, str]:
     """type hint -> (spec_type, detail-if-none)."""
     if hint is inspect.Parameter.empty:
         return None, "missing annotation"
+    if isinstance(hint, str):
+        # a stringified annotation that would not eval in its module —
+        # the author's type statement is illegible to us, which is the
+        # epistemic situation of a MISSING hint, not of an authoritative
+        # unsupported one: probing may rescue it (capped at medium)
+        return None, f"unresolvable annotation {hint!r}"
     if hint is bool:                      # before int: bool subclasses int
         return "bool_", ""                # drivable, held fixed — never scaled
     if isinstance(hint, type) and issubclass(hint, (pathlib.PurePath, os.PathLike)):
@@ -120,6 +127,8 @@ def _map_hint(hint) -> tuple[str | None, str]:
         return None, "filesystem path (I/O domain, not generated)"
     if hint is int:
         return "int_mag", ""
+    if hint is float:
+        return "float_mag", ""
     if hint is str:
         return "str_", ""
     if hint is bytes:
@@ -130,7 +139,14 @@ def _map_hint(hint) -> tuple[str | None, str]:
         non_none = [a for a in args if a is not type(None)]
         if len(non_none) == 1:            # Optional[T] -> T
             return _map_hint(non_none[0])
-        return None, f"union {hint}"
+        # multi-member union: drive the first member we know how to
+        # generate — one declared branch, honestly labeled, beats
+        # undrivable. Declaration order = the author's primary intent.
+        for member in non_none:
+            tag, detail = _map_hint(member)
+            if tag is not None:
+                return tag, detail   # instance_ detail carries its ctor ref
+        return None, f"union {hint}: no drivable member"
     import collections.abc as abc
     if hint in (list, abc.Sequence, abc.Iterable):
         return "list_int", ""
@@ -139,7 +155,7 @@ def _map_hint(hint) -> tuple[str | None, str]:
     if hint in (set, frozenset):
         return "set_int", ""
     if origin in (list, abc.Sequence, abc.Iterable, abc.Collection):
-        if not args or args[0] is int:
+        if not args or args[0] in (int, typing.Any):
             return "list_int", ""
         if args[0] is str:
             return "list_str", ""
@@ -237,6 +253,22 @@ def _synth_value(hint, depth):
     raise ValueError(f"cannot synthesize a value for {hint!r}")
 
 
+def _resolve_str_hint(hint, fn):
+    """`from __future__ import annotations` stringifies every hint, and
+    get_type_hints fails WHOLESALE when any one name in the signature is
+    unresolvable (the TYPE_CHECKING-guarded-alias pattern). Recover per
+    param: eval the string in the function's module globals. A string
+    that still won't resolve stays a string — _map_hint turns it into an
+    honest reason and probing may rescue it."""
+    if not isinstance(hint, str):
+        return hint
+    mod = sys.modules.get(getattr(fn, "__module__", None))
+    try:
+        return eval(hint, getattr(mod, "__dict__", {}))  # noqa: S307
+    except Exception:
+        return hint
+
+
 def _describe_function(fid, fn):
     try:
         sig = inspect.signature(fn)
@@ -266,7 +298,8 @@ def _describe_function(fid, fn):
             params.append({"name": p.name, "spec_type": None,
                            "omitted": True, "detail": "has default"})
             continue
-        tag, detail = _map_hint(hints.get(p.name, p.annotation))
+        tag, detail = _map_hint(_resolve_str_hint(
+            hints.get(p.name, p.annotation), fn))
         entry = {"name": p.name, "spec_type": tag,
                  "omitted": False, "detail": detail}
         if tag == "instance_":       # detail slot carries the constructor ref
@@ -416,6 +449,8 @@ def materialize(spec):
     rng = random.Random(seed)
     if tag == "int_mag":
         return size
+    if tag == "float_mag":
+        return float(size)
     if tag == "bool_":
         return bool(size)
     if tag == "instance_":

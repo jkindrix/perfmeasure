@@ -21,6 +21,8 @@ from perfmeasure.protocol import seed_for
 
 FIXED_INT_VALUE = 1
 FIXED_VARIANTS = 3      # 0: value 1, 1: value 0, 2: half of the first driver
+# scalar magnitudes (int/float): scaled only when nothing else scales
+MAGNITUDE_TAGS = {"int_mag", "float_mag"}
 # drivable but never scalable; wire value = GenSpec.size
 FIXED_TAGS = {"bool_": 0, "duration_ms": 1, "opt_none": 0, "instance_": 0}
 FIXED_TAG_DISPLAY = {"bool_": False, "duration_ms": "1ms", "opt_none": None}
@@ -42,8 +44,8 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
             f" ({p.detail})" if p.detail else "")
 
     scalable = [p for p in active if p.spec_type in SCALABLE_TAGS]
-    collections = [p for p in scalable if p.spec_type != "int_mag"]
-    ints = [p for p in scalable if p.spec_type == "int_mag"]
+    collections = [p for p in scalable if p.spec_type not in MAGNITUDE_TAGS]
+    ints = [p for p in scalable if p.spec_type in MAGNITUDE_TAGS]
     # non-scalable-but-drivable tags: held at a fixed value, never scaled
     # (a Duration is a timeout — scaling it would measure the sleep)
     fixed_other = [p for p in active if p.spec_type in FIXED_TAGS]
@@ -96,7 +98,10 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
                 spec.of_index = first_driver_idx
                 out.append(spec)
             else:
-                out.append(GenSpec("int_mag", "magnitude", fixed_desc,
+                # held-fixed scalar keeps its own tag: a float param must
+                # receive a float, not an int that happens to coerce
+                out.append(GenSpec(p.spec_type or "int_mag", "magnitude",
+                                   fixed_desc,
                                    seed_for(desc.fid, "fixed", 0)))
         return out
 

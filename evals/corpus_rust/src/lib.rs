@@ -19,6 +19,16 @@ pub fn rs_binary_search(xs: &[i64], target: i64) -> usize {
     lo
 }
 
+pub fn rs_halving_f64(x: f64) -> u64 {
+    let mut v = x.abs();
+    let mut steps = 0;
+    while v > 1.0 {
+        v /= 2.0;
+        steps += 1;
+    }
+    steps
+}
+
 pub fn rs_halving(n: u64) -> u64 {
     let mut n = n;
     let mut steps = 0;

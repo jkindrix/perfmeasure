@@ -61,6 +61,7 @@ TAG_SHAPES: dict[str, list[str]] = {
     "dict_ii": ["random", "sorted", "dup_heavy"],   # int keys -> int values
     "set_int": ["random"],
     "int_mag": ["magnitude"],
+    "float_mag": ["magnitude"],
 }
 SCALABLE_TAGS = set(TAG_SHAPES)
 

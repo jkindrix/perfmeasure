@@ -161,6 +161,13 @@ def _arm(fn: dict) -> str:
             else:
                 exprs.append(f"&a{i}[..]")
             continue
+        if tag == "float_mag":
+            # scalar float magnitude: same ladder as int_mag, cast once
+            lines.append(
+                f'            let a{i}: {rtype} = '
+                f'gen_int(&req.inputs[{i}]) as {rtype};')
+            exprs.append(f"a{i}")
+            continue
         if tag == "int_mag":
             lines.append(
                 f'            let a{i}: i64 = '

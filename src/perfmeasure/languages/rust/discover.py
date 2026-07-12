@@ -47,6 +47,8 @@ TYPE_WHITELIST: dict[str, tuple] = {
     "&[&str]": ("list_str", "borrow_str_slice"),
     "bool": ("bool_", "copy"),
     "Duration": ("duration_ms", "copy"),
+    "f64": ("float_mag", "copy"),
+    "f32": ("float_mag", "copy"),
     "usize": ("int_mag", "copy"),
     "u64": ("int_mag", "copy"),
     "i64": ("int_mag", "copy"),
@@ -72,6 +74,7 @@ TYPE_WHITELIST: dict[str, tuple] = {
 # rust type per tag, used by the code generator for local declarations
 DECL_TYPES = {"list_int": "Vec<i64>", "list_str": "Vec<String>",
               "str_": "String", "bytes_": "Vec<u8>", "int_mag": "i64",
+              "float_mag": "f64",
               "list_float": "Vec<f64>", "list_list_int": "Vec<Vec<i64>>",
               "set_int": "std::collections::HashSet<i64>",
               "bool_": "bool",

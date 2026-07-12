@@ -297,5 +297,31 @@
   "masks_with_bit": {
     "time": "O(2^n)",
     "space": null
+  },
+  "halving_float": {
+    "time": "O(log n)",
+    "space": null
+  },
+  "union_digits": {
+    "time": "O(log n)",
+    "space": null
+  },
+  "sum_any": {
+    "time": "O(n)",
+    "space": "O(1)"
+  },
+  "alias_total": {
+    "time": "O(n)",
+    "space": null,
+    "type_source": {
+      "value": "probed"
+    }
+  },
+  "alias_scaled": {
+    "time": "O(n)",
+    "space": null,
+    "type_source": {
+      "value": "probed"
+    }
   }
 }

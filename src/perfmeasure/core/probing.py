@@ -49,21 +49,28 @@ def probe(session: RunnerSession, desc: FunctionDescriptor,
     `deadline` is an absolute perf_counter timestamp shared with the rest
     of the measurement: each probe's timeout is recomputed from it, so
     probing can never blow the function deadline on its own."""
+    def _probeable(p) -> bool:
+        # missing annotation, or one that would not resolve at runtime
+        # (TYPE_CHECKING-guarded alias): both mean "the author's type is
+        # illegible here", which probing exists for. An explicit
+        # unsupported hint stays authoritative.
+        return (p.detail == "missing annotation"
+                or p.detail.startswith("unresolvable annotation"))
+
     unhinted = [p for p in desc.params
-                if not p.omitted and p.spec_type is None
-                and p.detail == "missing annotation"]
+                if not p.omitted and p.spec_type is None and _probeable(p)]
     if not unhinted:
         return False, None
     # explicit unsupported hints elsewhere: probing can't rescue those
-    if any(p.spec_type is None and not p.omitted
-           and p.detail != "missing annotation" for p in desc.params):
+    if any(p.spec_type is None and not p.omitted and not _probeable(p)
+           for p in desc.params):
         return False, None
 
     resolved: dict[str, str] = {p.name: p.spec_type for p in desc.params
                                 if p.spec_type}
     for target in unhinted:
-        last_error = "no candidates"
-        for tag in candidates_for(target.name):
+        cands = candidates_for(target.name)
+        for tag in cands:
             verdict = _accepts(session, desc, resolved, target.name, tag,
                                deadline)
             if verdict == "deadline":
@@ -74,8 +81,11 @@ def probe(session: RunnerSession, desc: FunctionDescriptor,
                 target.spec_type = tag
                 target.detail = "probed"
                 break
-            last_error = f"candidate {tag} rejected"
         else:
+            # name every rejected candidate: "candidate X rejected" read
+            # as if only X had been tried
+            last_error = (f"all {len(cands)} candidates rejected: "
+                          + ", ".join(cands))
             others = [p.name for p in unhinted
                       if p.name != target.name and p.name not in resolved]
             blame = (f"; co-probed unhinted params {others} may be the "

@@ -141,8 +141,8 @@ def _run_ladders(session: RunnerSession, desc: FunctionDescriptor,
                  drive: DrivePlan, budget: Budget, deadline: float,
                  hard_wall: float) -> _Run:
     run = _Run()
-    int_only = all(p.spec_type == "int_mag" for p in desc.params
-                   if p.name in drive.driver_params)
+    int_only = all(p.spec_type in ("int_mag", "float_mag")
+                   for p in desc.params if p.name in drive.driver_params)
     n0 = N0_INT if int_only else N0_COLLECTION
     n_max = INT_N_MAX if int_only else N_MAX
     for i, shape in enumerate(drive.shapes):
