@@ -40,6 +40,7 @@ _COSTED_METHODS = {"index", "count", "remove", "insert", "pop", "sort"}
 
 
 class PythonAdapter:
+    language = "python"
     extensions = (".py",)
 
     def parse(self, path: str, source: bytes) -> list[Function]:

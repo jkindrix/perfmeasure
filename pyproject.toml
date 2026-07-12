@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
     "tree-sitter>=0.23",
     "tree-sitter-python>=0.23",
+    "tree-sitter-rust>=0.24.2",
 ]
 
 [project.scripts]

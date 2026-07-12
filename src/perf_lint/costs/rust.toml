@@ -1,0 +1,18 @@
+# Rust cost table. Note deliberate absences vs python.toml:
+#  - no str_concat: String += is amortized O(append), NOT quadratic (unlike Python)
+#  - set/map lookups const (BTree* are O(log n); treated as const — see roadmap)
+
+[method.contains]  # recv.contains(&x)
+vec = "linear"
+str = "linear"
+set = "const"
+map = "const"
+
+[method.insert]  # Vec::insert shifts; HashMap/HashSet insert is const
+vec = "linear"
+
+[method.remove]  # Vec::remove shifts; HashMap/HashSet remove is const
+vec = "linear"
+
+[method.sort]  # sort / sort_unstable / sort_by / sort_by_key (adapter-normalized)
+vec = "nlogn"

@@ -9,8 +9,7 @@ from perf_lint.analysis import UNKNOWN, Finding, analyze_function, build_summari
 from perf_lint.costs import load_costs
 from perf_lint.report import render, render_json
 
-SKIP_DIRS = {"__pycache__"}
-LANGUAGES = {".py": "python"}
+SKIP_DIRS = {"__pycache__", "target", "node_modules"}
 
 
 def collect_files(paths: list[str]) -> list[str]:
@@ -30,17 +29,22 @@ def collect_files(paths: list[str]) -> list[str]:
 
 
 def run(paths: list[str]) -> tuple[list[Finding], list]:
-    functions = []
+    # summaries and cost tables are per-language: a Rust fn must not match a
+    # Python fn of the same name
+    by_language: dict[str, list] = {}
     for path in collect_files(paths):
         adapter = next(a for a in ADAPTERS if path.endswith(a.extensions))
         with open(path, "rb") as f:
             source = f.read()
-        functions.extend(adapter.parse(path, source))
-    costs = load_costs("python")
-    summaries = build_summaries(functions, costs)
+        by_language.setdefault(adapter.language, []).extend(adapter.parse(path, source))
     findings: list[Finding] = []
-    for fn in functions:
-        findings.extend(analyze_function(fn, costs, summaries))
+    functions = []
+    for language, fns in by_language.items():
+        costs = load_costs(language)
+        summaries = build_summaries(fns, costs)
+        for fn in fns:
+            findings.extend(analyze_function(fn, costs, summaries))
+        functions.extend(fns)
     return findings, functions
 
 
