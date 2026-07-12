@@ -34,7 +34,7 @@ except ImportError:                      # pragma: no cover
 
 PROTOCOL_VERSION = 1
 SPEC_TYPES = ["list_int", "list_float", "list_str", "list_list_int", "str_",
-              "bytes_", "dict_si", "set_int", "int_mag"]
+              "bytes_", "dict_si", "set_int", "int_mag", "bool_"]
 SHAPES = ["random", "sorted", "reversed", "dup_heavy", "all_equal", "magnitude"]
 BATCH_THRESHOLD_S = 10e-6   # calls faster than this are timed in batches
 BATCH_TARGET_S = 200e-6
@@ -101,7 +101,7 @@ def _map_hint(hint) -> tuple[str | None, str]:
     if hint is inspect.Parameter.empty:
         return None, "missing annotation"
     if hint is bool:                      # before int: bool subclasses int
-        return None, "bool"
+        return "bool_", ""                # drivable, held fixed — never scaled
     if hint is int:
         return "int_mag", ""
     if hint is str:
@@ -236,6 +236,8 @@ def materialize(spec):
     rng = random.Random(seed)
     if tag == "int_mag":
         return size
+    if tag == "bool_":
+        return bool(size)
     if tag == "list_int":
         if shape == "all_equal":
             return [7] * size

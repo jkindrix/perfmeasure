@@ -1,0 +1,5 @@
+[
+  {"path": "~/rust-expect/crates/rust-expect", "features": ["full"]},
+  {"path": "~/rust-expect/crates/rust-pty"},
+  {"path": "src/perfmeasure"}
+]

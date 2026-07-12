@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 from collections import Counter
 
 from perfmeasure import protocol
@@ -17,11 +18,16 @@ from perfmeasure.core.model import FunctionReport
 from perfmeasure.core.orchestrator import measure_function
 from perfmeasure.session import RunnerSession
 
-SKIP_DIRS = {"__pycache__", "node_modules", "target", "build", "dist"}
+SKIP_DIRS = {"__pycache__", "node_modules", "target", "build", "dist",
+             "tests", "test", "venv"}
+_TEST_FILE = re.compile(r"^(test_.*|.*_test|conftest)\.py$")
 
 
 def collect_files(paths: list[str], extensions: tuple[str, ...],
                   exclude: list[str] | None = None) -> list[str]:
+    """Walk targets; test dirs/files are excluded by default — they are
+    denominator noise for a coverage report, same policy as Rust's
+    #[cfg(test)] filter."""
     files: list[str] = []
     for path in paths:
         if os.path.isfile(path):
@@ -32,7 +38,8 @@ def collect_files(paths: list[str], extensions: tuple[str, ...],
                 dirs[:] = [d for d in dirs
                            if not d.startswith(".") and d not in SKIP_DIRS]
                 files.extend(os.path.join(root, n) for n in sorted(names)
-                             if n.endswith(extensions))
+                             if n.endswith(extensions)
+                             and not _TEST_FILE.match(n))
     if exclude:
         files = [f for f in files
                  if not any(fnmatch.fnmatch(f, pat) or pat in f

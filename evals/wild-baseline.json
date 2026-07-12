@@ -1,0 +1,48 @@
+{
+  "~/rust-expect/crates/rust-expect": {
+    "functions": 107,
+    "measured": 67,
+    "reasons": {
+      "param 'ending'": 1,
+      "no_scalable_params": 21,
+      "param 'options'": 2,
+      "generic": 4,
+      "cfg_inactive": 3,
+      "param 'target'": 1,
+      "rejected": 1,
+      "param 'config'": 1,
+      "param 'error'": 1,
+      "param 'transcript'": 1,
+      "param 'prompts'": 1,
+      "param 'fg'": 1
+    }
+  },
+  "~/rust-expect/crates/rust-pty": {
+    "functions": 4,
+    "measured": 0,
+    "reasons": {
+      "cfg_inactive": 3,
+      "no_scalable_params": 1
+    }
+  },
+  "src/perfmeasure": {
+    "functions": 35,
+    "measured": 6,
+    "reasons": {
+      "no_scalable_params": 2,
+      "param 'budget'": 2,
+      "param 'inputs'": 1,
+      "rejected": 9,
+      "param 'stream'": 1,
+      "param 'cargo_toml'": 1,
+      "param 'crate_root'": 3,
+      "param 'functions'": 1,
+      "param 'path'": 1,
+      "param 'points'": 1,
+      "param 'session'": 3,
+      "param 'desc'": 1,
+      "param 'reports'": 2,
+      "param 'extensions'": 1
+    }
+  }
+}

@@ -10,6 +10,7 @@ the cases textual matching gets wrong.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import tree_sitter_rust
@@ -31,6 +32,16 @@ TYPE_WHITELIST: dict[str, tuple[str, str]] = {
     "&[u8]": ("bytes_", "borrow_slice"),
     "&Vec<u8>": ("bytes_", "borrow"),
     "Vec<u8>": ("bytes_", "own"),
+    "&[f64]": ("list_float", "borrow_slice"),
+    "&Vec<f64>": ("list_float", "borrow"),
+    "Vec<f64>": ("list_float", "own"),
+    "&[Vec<i64>]": ("list_list_int", "borrow_slice"),
+    "Vec<Vec<i64>>": ("list_list_int", "own"),
+    "&HashSet<i64>": ("set_int", "borrow"),
+    "HashSet<i64>": ("set_int", "own"),
+    "&[&str]": ("list_str", "borrow_str_slice"),
+    "bool": ("bool_", "copy"),
+    "Duration": ("duration_ms", "copy"),
     "usize": ("int_mag", "copy"),
     "u64": ("int_mag", "copy"),
     "i64": ("int_mag", "copy"),
@@ -43,14 +54,19 @@ TYPE_WHITELIST: dict[str, tuple[str, str]] = {
 # rust type per tag, used by the code generator for local declarations
 DECL_TYPES = {"list_int": "Vec<i64>", "list_str": "Vec<String>",
               "str_": "String", "bytes_": "Vec<u8>", "int_mag": "i64",
+              "list_float": "Vec<f64>", "list_list_int": "Vec<Vec<i64>>",
+              "set_int": "std::collections::HashSet<i64>",
+              "bool_": "bool",
+              "duration_ms": "std::time::Duration",
               "dict_si": "std::collections::HashMap<i64,i64>"}
 
 
 def _normalize(type_text: str) -> str:
     t = re.sub(r"\s+", "", type_text)
     t = t.replace("&'_", "&").replace("std::collections::", "")
+    t = t.replace("std::time::", "").replace("core::time::", "")
     t = re.sub(r"&'[a-zA-Z_]\w*", "&", t)   # one named input lifetime is fine
-    return t.replace("HashMap<i64,i64>", "HashMap<i64,i64>")
+    return t
 
 
 def crate_name(cargo_toml: Path) -> str:
@@ -98,6 +114,26 @@ def _cfg_test(attrs: list) -> bool:
     return any(b"cfg" in a.text and b"test" in a.text for a in attrs)
 
 
+_HOST = {"unix": True, "windows": False,
+         'target_os="linux"': True, 'target_os="windows"': False,
+         'target_os="macos"': False,
+         'target_family="unix"': True, 'target_family="windows"': False}
+if not sys.platform.startswith("linux"):  # pragma: no cover
+    _HOST = {}  # only evaluate cfgs on the platform this table describes
+
+
+def _cfg_inactive(attrs: list) -> str | None:
+    """Simple platform cfgs (#[cfg(windows)], #[cfg(target_os = "...")])
+    that are OFF on this host. Complex expressions (any/all/not) are not
+    evaluated — the compile-retry loop remains their backstop."""
+    for a in attrs:
+        text = re.sub(r"\s+", "", a.text.decode())
+        m = re.fullmatch(r"#\[cfg\(([^()]*)\)\]", text)
+        if m and _HOST.get(m.group(1)) is False:
+            return m.group(1)
+    return None
+
+
 def _walk(node, path, crate, mod_path, src_root, out, module_pub):
     pending_attrs = []
     for child in node.children:
@@ -106,7 +142,14 @@ def _walk(node, path, crate, mod_path, src_root, out, module_pub):
             continue
         attrs, pending_attrs = pending_attrs, []
         if child.type == "function_item":
-            out.append(_describe(child, path, crate, mod_path, module_pub))
+            inactive = _cfg_inactive(attrs)
+            entry = _describe(child, path, crate, mod_path, module_pub)
+            if entry is None:
+                continue                # private / unreachable: not API
+            if inactive:
+                entry.update(drivable=False, params=[],
+                             skip_reason=f"cfg_inactive: {inactive}")
+            out.append(entry)
         elif child.type == "mod_item":
             if _cfg_test(attrs):        # #[cfg(test)] mod: never reachable
                 continue
@@ -114,6 +157,16 @@ def _walk(node, path, crate, mod_path, src_root, out, module_pub):
             if name_node is None:
                 continue
             name = name_node.text.decode()
+            inactive = _cfg_inactive(attrs)
+            if inactive:
+                # one honest marker line for the whole platform-gated module
+                out.append({"fid": "::".join([crate, *mod_path, name]),
+                            "file": str(path),
+                            "line": child.start_point[0] + 1, "params": [],
+                            "drivable": False,
+                            "skip_reason": f"cfg_inactive: {inactive} "
+                                           "(module skipped)"})
+                continue
             pub = module_pub and _is_pub(child)
             body = child.child_by_field_name("body")
             if body is not None:                      # inline mod { }
@@ -127,7 +180,7 @@ def _walk(node, path, crate, mod_path, src_root, out, module_pub):
                         break
 
 
-def _describe(node, path, crate, mod_path, module_pub) -> dict:
+def _describe(node, path, crate, mod_path, module_pub) -> dict | None:
     name = node.child_by_field_name("name").text.decode()
     fid = "::".join([crate, *mod_path, name])
     base = {"fid": fid, "file": str(path),
@@ -136,10 +189,10 @@ def _describe(node, path, crate, mod_path, module_pub) -> dict:
     def skip(reason):
         return {**base, "drivable": False, "skip_reason": reason}
 
-    if not _is_pub(node):
-        return skip("not pub")
-    if not module_pub:
-        return skip("not_reachable: enclosing module is private")
+    # private functions are not public API: excluded from the report
+    # entirely, matching the Python runner's policy for _-prefixed names
+    if not _is_pub(node) or not module_pub:
+        return None
     if node.child_by_field_name("type_parameters") is not None:
         return skip("generic")
 

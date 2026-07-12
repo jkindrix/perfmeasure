@@ -56,6 +56,25 @@ def test_runner_skip_reason_propagates():
     assert p is None and reason == "varargs"
 
 
+def test_bool_and_duration_are_fixed_never_scaled():
+    d = desc([ParamInfo("xs", "list_int"), ParamInfo("verbose", "bool_"),
+              ParamInfo("timeout", "duration_ms")])
+    p, reason = plan(d)
+    assert reason is None
+    assert p.driver_params == ["xs"]
+    assert p.fixed_params == {"verbose": False, "timeout": "1ms"}
+    xs, verbose, timeout = p.specs("random", 64)
+    assert xs.size == 64
+    assert verbose.type_tag == "bool_" and verbose.size == 0
+    assert timeout.type_tag == "duration_ms" and timeout.size == 1
+
+
+def test_only_fixed_tags_is_not_scalable():
+    d = desc([ParamInfo("verbose", "bool_")])
+    p, reason = plan(d)
+    assert p is None and reason == "no_scalable_params"
+
+
 def test_shape_fallback_to_random_for_unsupported():
     d = desc([ParamInfo("d", "dict_si"), ParamInfo("keys", "list_str")])
     p, _ = plan(d)

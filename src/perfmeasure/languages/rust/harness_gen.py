@@ -42,7 +42,10 @@ codegen-units = 16
 """
 
 _GEN = {"list_int": "shaped_i64", "list_str": "gen_list_str",
-        "str_": "gen_string", "bytes_": "gen_bytes", "dict_si": "gen_map"}
+        "str_": "gen_string", "bytes_": "gen_bytes", "dict_si": "gen_map",
+        "list_float": "gen_list_f64", "list_list_int": "gen_list_list",
+        "set_int": "gen_set", "bool_": "gen_bool",
+        "duration_ms": "gen_duration"}
 
 
 def _template() -> str:
@@ -82,6 +85,12 @@ def _arm(fn: dict) -> str:
                 own.append(i)
             elif style == "borrow_slice":
                 exprs.append(f"&a{i}[..]")
+            elif style == "borrow_str_slice":   # &[&str] view over Vec<String>
+                lines.append(f"            let a{i}r: Vec<&str> = "
+                             f"a{i}.iter().map(|s| s.as_str()).collect();")
+                exprs.append(f"&a{i}r[..]")
+            elif style == "copy":                # bool, Duration
+                exprs.append(f"a{i}")
             else:
                 exprs.append(f"&a{i}")
     if own:

@@ -56,6 +56,34 @@ pub fn count_zero_bytes(data: &[u8]) -> usize {
     data.iter().filter(|b| **b == 0).count()
 }
 
+pub fn sum_if(xs: &[i64], verbose: bool) -> i64 {
+    let mut acc: i64 = 0;
+    for x in xs {
+        acc = acc.wrapping_add(*x);
+        if verbose {
+            acc = acc.wrapping_add(1);
+        }
+    }
+    acc
+}
+
+pub fn join_parts(parts: &[&str]) -> String {
+    parts.concat()
+}
+
+pub fn mean(xs: &[f64]) -> f64 {
+    if xs.is_empty() { 0.0 } else { xs.iter().sum::<f64>() / xs.len() as f64 }
+}
+
+pub fn capped_sum(xs: &[i64], _timeout: std::time::Duration) -> i64 {
+    xs.iter().sum()
+}
+
+#[cfg(windows)]
+pub fn windows_only(xs: &[i64]) -> i64 {
+    xs.len() as i64
+}
+
 mod private_mod {
     pub fn hidden(xs: &[i64]) -> i64 {
         xs.len() as i64

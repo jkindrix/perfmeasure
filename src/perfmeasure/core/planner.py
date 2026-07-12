@@ -21,6 +21,9 @@ from perfmeasure.protocol import seed_for
 
 FIXED_INT_VALUE = 1
 FIXED_VARIANTS = 3      # 0: value 1, 1: value 0, 2: half of the first driver
+# drivable but never scalable; wire value = GenSpec.size
+FIXED_TAGS = {"bool_": 0, "duration_ms": 1}
+FIXED_TAG_DISPLAY = {"bool_": False, "duration_ms": "1ms"}
 
 
 def plan(desc: FunctionDescriptor, fixed_variant: int = 0
@@ -41,6 +44,9 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
     scalable = [p for p in active if p.spec_type in SCALABLE_TAGS]
     collections = [p for p in scalable if p.spec_type != "int_mag"]
     ints = [p for p in scalable if p.spec_type == "int_mag"]
+    # non-scalable-but-drivable tags: held at a fixed value, never scaled
+    # (a Duration is a timeout — scaling it would measure the sleep)
+    fixed_other = [p for p in active if p.spec_type in FIXED_TAGS]
 
     if collections:
         drivers, fixed_ints = collections, ints
@@ -64,6 +70,8 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
     else:
         fixed_desc = f"half_of:{driver_names[0]}"
     fixed_params = {p.name: fixed_desc for p in fixed_ints}
+    fixed_params.update(
+        {p.name: FIXED_TAG_DISPLAY[p.spec_type] for p in fixed_other})
 
     def specs(shape: str, size: int) -> list[GenSpec]:
         out = []
@@ -72,6 +80,10 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
                 s = shape if shape in TAG_SHAPES[p.spec_type] else "random"
                 out.append(GenSpec(p.spec_type, s, size,
                                    seed_for(desc.fid, s, size)))
+            elif p.spec_type in FIXED_TAGS:
+                out.append(GenSpec(p.spec_type, "fixed",
+                                   FIXED_TAGS[p.spec_type],
+                                   seed_for(desc.fid, "fixed", 0)))
             elif fixed_variant == 2:
                 spec = GenSpec("int_half_of", "magnitude", 0,
                                seed_for(desc.fid, "fixed", 0))

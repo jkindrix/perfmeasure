@@ -199,6 +199,53 @@ fn gen_int(spec: &Spec) -> i64 {
     spec.size as i64
 }
 
+fn gen_bool(spec: &Spec) -> bool {
+    spec.size != 0
+}
+
+fn gen_duration(spec: &Spec) -> std::time::Duration {
+    std::time::Duration::from_millis(spec.size)
+}
+
+fn gen_list_f64(spec: &Spec) -> Vec<f64> {
+    let n = spec.size as usize;
+    let mut r = Rng(spec.seed);
+    let unit = |r: &mut Rng| (r.next() >> 11) as f64 / (1u64 << 53) as f64;
+    let mut v: Vec<f64> = match spec.shape.as_str() {
+        "all_equal" => vec![0.5; n],
+        "dup_heavy" => {
+            let pool: Vec<f64> =
+                (0..(n / 16).max(1)).map(|_| unit(&mut r)).collect();
+            (0..n).map(|_| pool[(r.next() as usize) % pool.len()]).collect()
+        }
+        _ => (0..n).map(|_| unit(&mut r)).collect(),
+    };
+    if spec.shape == "sorted" {
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    } else if spec.shape == "reversed" {
+        v.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    }
+    v
+}
+
+fn gen_list_list(spec: &Spec) -> Vec<Vec<i64>> {
+    let n = spec.size as usize;
+    let mut r = Rng(spec.seed);
+    (0..n)
+        .map(|_| (0..16).map(|_| r.next() as i64).collect())
+        .collect()
+}
+
+fn gen_set(spec: &Spec) -> std::collections::HashSet<i64> {
+    let n = spec.size as usize;
+    let mut r = Rng(spec.seed);
+    let mut s = std::collections::HashSet::with_capacity(n);
+    while s.len() < n {
+        s.insert(r.next() as i64);
+    }
+    s
+}
+
 fn resolve_half_of(inputs: &[Spec], sizes: &[u64], idx: usize) -> i64 {
     (sizes[idx] / 2) as i64
 }
@@ -342,8 +389,9 @@ fn main() {
         "op": "hello", "protocol": 1, "language": "rust",
         "runtime": "rustc-built harness for {{TARGET_CRATE}}",
         "capabilities": {
-            "spec_types": ["list_int", "list_str", "str_", "bytes_",
-                            "int_mag", "dict_si"],
+            "spec_types": ["list_int", "list_float", "list_str",
+                            "list_list_int", "str_", "bytes_", "set_int",
+                            "int_mag", "dict_si", "bool_", "duration_ms"],
             "shapes": ["random", "sorted", "reversed", "dup_heavy",
                         "all_equal", "magnitude"],
             "memory": "counting_allocator",

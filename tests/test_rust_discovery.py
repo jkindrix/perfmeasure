@@ -25,13 +25,14 @@ def test_skips_with_reasons():
     fns = _by_name()
     assert fns["takes_generic"]["skip_reason"] == "generic"
     assert "&mut" in fns["takes_mut"]["skip_reason"]
-    assert "not_reachable" in fns["hidden"]["skip_reason"]
+
+
+def test_private_functions_are_not_reported():
+    assert "hidden" not in _by_name()   # pub fn in a private mod
 
 
 def test_fids_are_full_paths():
-    fns = _by_name()
-    assert fns["sum_slice"]["fid"] == "tiny_crate::sum_slice"
-    assert fns["hidden"]["fid"] == "tiny_crate::private_mod::hidden"
+    assert _by_name()["sum_slice"]["fid"] == "tiny_crate::sum_slice"
 
 
 def test_byte_slices_are_drivable():
@@ -41,3 +42,17 @@ def test_byte_slices_are_drivable():
 
 def test_cfg_test_modules_are_not_reported():
     assert "test_helper" not in _by_name()
+
+
+def test_platform_cfg_is_labeled_not_mislabeled():
+    f = _by_name()["windows_only"]
+    assert f["drivable"] is False
+    assert "cfg_inactive: windows" in f["skip_reason"]
+
+
+def test_new_whitelist_entries():
+    fns = _by_name()
+    assert fns["sum_if"]["params"][1]["spec_type"] == "bool_"
+    assert fns["join_parts"]["params"][0]["style"] == "borrow_str_slice"
+    assert fns["mean"]["params"][0]["spec_type"] == "list_float"
+    assert fns["capped_sum"]["params"][1]["spec_type"] == "duration_ms"
