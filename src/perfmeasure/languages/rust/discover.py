@@ -242,9 +242,21 @@ class Ctors:
             return 'std::path::Path::new("")'
         if norm.startswith("Option<"):
             return "None"                     # type-infers
+        # collections: small NON-EMPTY literals when the element type is a
+        # plain scalar — empty is the most degenerate value possible and
+        # fallible ctors reject it (memchr's Pair::new(&[]) -> None ->
+        # unwrap panic). Untyped literals still type-infer at the call
+        # site; exotic element types keep the empty form and lean on the
+        # compile-retry valve.
+        _SCALARS = ("usize", "u64", "i64", "u32", "i32", "u16", "i16",
+                    "u8", "i8", "f64", "f32")
         if norm.startswith("Vec<"):
+            if norm[4:-1] in _SCALARS:
+                return "vec![1, 2, 3]"
             return "Vec::new()"               # type-infers
         if norm.startswith("&["):
+            if norm[2:-1] in _SCALARS:
+                return "&[1, 2, 3]"
             return "&[]"                      # type-infers
         if norm.startswith("HashMap<"):
             return "std::collections::HashMap::new()"
