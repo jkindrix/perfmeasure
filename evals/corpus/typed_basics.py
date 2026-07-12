@@ -149,3 +149,42 @@ def untyped_mystery(xs):
 
 def takes_callback(f: Callable[[int], int], xs: list[int]) -> list[int]:
     return [f(x) for x in xs]
+
+
+# --- discriminating-class mass (the corpus was 51% O(n); these classes
+# --- are where the fitter earns its keep, so they get real representation)
+
+def third_steps(n: int) -> int:
+    steps = 0
+    while n > 1:
+        n //= 3
+        steps += 1
+    return steps
+
+
+def heap_drain(xs: list[int]) -> list[int]:
+    import heapq
+    h = list(xs)
+    heapq.heapify(h)
+    return [heapq.heappop(h) for _ in range(len(h))]
+
+
+def rank_positions(xs: list[int]) -> list[int]:
+    return sorted(range(len(xs)), key=xs.__getitem__)
+
+
+def max_triple_product(xs: list[int]) -> int:
+    best = 0
+    for a in xs:
+        for b in xs:
+            for c in xs:
+                best = max(best, a * b * c)
+    return best
+
+
+def masks_with_bit(n: int) -> int:
+    count = 0
+    for mask in range(1 << n):
+        if mask & 1:
+            count += 1
+    return count

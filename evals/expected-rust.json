@@ -113,17 +113,21 @@
     "expect_flag": "fixed_instance_inputs"
   },
   "rs_always_panics": {
-    "provenance": "UNDRIVABLE"
+    "provenance": "UNDRIVABLE",
+    "undrivable_kind": "inherent"
   },
   "rs_takes_alias": {
-    "provenance": "UNDRIVABLE"
+    "provenance": "UNDRIVABLE",
+    "undrivable_kind": "tool_limit"
   },
   "rs_generic": {
-    "provenance": "UNDRIVABLE"
+    "provenance": "UNDRIVABLE",
+    "undrivable_kind": "tool_limit"
   },
   "rs_feature_gated": {
     "provenance": "UNDRIVABLE",
-    "detail_contains": "harness_compile_failed"
+    "detail_contains": "harness_compile_failed",
+    "undrivable_kind": "tool_limit"
   },
   "rs_scaled_pair_count": {
     "time": "O(n^2)",
@@ -144,5 +148,16 @@
       "O(n log n)"
     ],
     "expect_flag": "mutates_receiver"
+  },
+  "RsOpts::new": {
+    "provenance": "UNDRIVABLE",
+    "detail_contains": "no_scalable_params",
+    "undrivable_kind": "inherent",
+    "note": "zero-arg constructor: nothing to scale"
+  },
+  "RsIndex::new": {
+    "time": "O(1)",
+    "space": "O(1)",
+    "note": "ignores its String arg; drop of one buffer is O(1)"
   }
 }

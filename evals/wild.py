@@ -53,6 +53,25 @@ def scan_one(target: dict, budget: float) -> dict | None:
             "reasons": dict(reasons)}
 
 
+def regressions(name: str, result: dict, base: dict | None) -> list[str]:
+    """Drivability regressions for one target vs its baseline: a drop in
+    measured count fails; new undrivable reasons are reported (they are
+    the next whitelist/feature work) but do not fail."""
+    if not base:
+        return []
+    out = []
+    if result["measured"] < base["measured"]:
+        out.append(f"{name}: measured {result['measured']} < "
+                   f"baseline {base['measured']}")
+    return out
+
+
+def new_reasons(result: dict, base: dict | None) -> list[str]:
+    if not base:
+        return []
+    return sorted(set(result["reasons"]) - set(base["reasons"]))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--update", action="store_true")
@@ -75,14 +94,11 @@ def main() -> int:
                            for k, v in sorted(r["reasons"].items(),
                                               key=lambda kv: -kv[1]))
                  or "none"))
-        if base:
-            if r["measured"] < base["measured"]:
-                failures.append(f"{name}: measured {r['measured']} < "
-                                f"baseline {base['measured']}")
-            new_reasons = set(r["reasons"]) - set(base["reasons"])
-            if new_reasons:
-                print(f"  new undrivable reasons vs baseline: "
-                      f"{sorted(new_reasons)} — candidate whitelist/feature work")
+        failures.extend(regressions(name, r, base))
+        fresh = new_reasons(r, base)
+        if fresh:
+            print(f"  new undrivable reasons vs baseline: "
+                  f"{fresh} — candidate whitelist/feature work")
 
     if args.update:
         BASELINE.write_text(json.dumps(results, indent=2) + "\n")

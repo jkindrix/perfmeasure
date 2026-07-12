@@ -89,7 +89,8 @@
     }
   },
   "takes_callback": {
-    "provenance": "UNDRIVABLE"
+    "provenance": "UNDRIVABLE",
+    "undrivable_kind": "tool_limit"
   },
   "untyped_total": {
     "time": "O(n)",
@@ -146,7 +147,8 @@
     }
   },
   "unprobeable": {
-    "provenance": "UNDRIVABLE"
+    "provenance": "UNDRIVABLE",
+    "undrivable_kind": "inherent"
   },
   "Accumulator.scale": {
     "time": "O(n)",
@@ -162,7 +164,8 @@
   },
   "Unbuildable": {
     "provenance": "UNDRIVABLE",
-    "detail_contains": "no synthesizable constructor"
+    "detail_contains": "no synthesizable constructor",
+    "undrivable_kind": "inherent"
   },
   "apply_options": {
     "time": "O(n)",
@@ -269,5 +272,30 @@
       "O(n log n)"
     ],
     "expect_flag": "mutates_receiver"
+  },
+  "third_steps": {
+    "time": "O(log n)",
+    "space": "O(1)"
+  },
+  "heap_drain": {
+    "time": "O(n log n)",
+    "space": "O(n)"
+  },
+  "rank_positions": {
+    "time": "O(n log n)",
+    "space": "O(n)",
+    "space_any": [
+      "O(n)",
+      "O(n log n)"
+    ],
+    "note": "sort-with-key allocator peak bends adjacent-class, same physics policy as rs_sort_copy"
+  },
+  "max_triple_product": {
+    "time": "O(n^3)",
+    "space": "O(1)"
+  },
+  "masks_with_bit": {
+    "time": "O(2^n)",
+    "space": null
   }
 }
