@@ -21,8 +21,8 @@ from perf_lint.adjudicate import LLMClient, adjudicate  # noqa: E402
 from perf_lint.cli import run  # noqa: E402
 
 
-def load_labeled_findings():
-    with open(os.path.join(os.path.dirname(__file__), "labels.json")) as f:
+def load_labeled_findings(labels_path):
+    with open(labels_path) as f:
         spec = json.load(f)
     repos = [os.path.expanduser(r) for r in spec["repos"]]
     findings, functions = run(repos)
@@ -45,9 +45,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("models", nargs="+")
     ap.add_argument("--url", default="http://localhost:11434/v1")
+    ap.add_argument(
+        "--labels",
+        default=os.path.join(os.path.dirname(__file__), "labels.json"),
+        help="labels file (e.g. evals/labels-rust.json)",
+    )
     args = ap.parse_args()
 
-    labeled, functions = load_labeled_findings()
+    labeled, functions = load_labeled_findings(args.labels)
     print(f"{len(labeled)} labeled findings\n")
 
     for model in args.models:

@@ -141,6 +141,19 @@ def test_nested_chains_flagged():
     assert findings[0].complexity == "O(n*m)"
 
 
+def test_chain_consumed_by_next_is_constant():
+    # into_iter().next() takes one element — O(1), not a pass over rows
+    findings = analyze("""
+        fn first_rows(cases: &Vec<u32>, rows: Vec<u32>) {
+            for case in cases {
+                let row = rows.clone().into_iter().next();
+                let major = "1.2.3".split('.').next();
+            }
+        }
+    """)
+    assert findings == []
+
+
 def test_zip_argument_is_not_nested():
     # zip iterates its argument in lockstep — linear, not quadratic
     findings = analyze("""

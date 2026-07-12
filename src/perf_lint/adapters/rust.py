@@ -219,6 +219,18 @@ class RustAdapter:
             if fn.type == "field_expression":
                 method = self._text(fn.child_by_field_name("field"))
                 obj = fn.child_by_field_name("value")
+                if method in ("next", "nth", "next_back"):
+                    chain = self._chain_parts(obj)
+                    if chain is not None:
+                        # a chain consumed by next()/nth() advances a constant
+                        # number of elements — O(1), not a pass over the root
+                        root, closures, siblings = chain
+                        self._visit_non_chain(root, out)
+                        for s in siblings:
+                            self._visit(s, out)
+                        for c in closures:
+                            self._visit(c, out)
+                        return
                 if method in ITER_METHODS:
                     self._visit_chain(node, out)
                     return
