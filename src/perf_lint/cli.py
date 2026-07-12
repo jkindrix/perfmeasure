@@ -151,7 +151,7 @@ def main() -> None:
         findings = [f for f, v in judged if v.keep]
         suppressed = [(f, f"[{v.label}] {v.reason}") for f, v in judged if not v.keep]
     if args.json:
-        print(render_json(findings, verbose=args.verbose))
+        print(render_json(findings, verbose=args.verbose, suppressed=suppressed))
     else:
         print(render(findings, verbose=args.verbose, suppressed=suppressed, title=title))
     sys.exit(_exit_code(findings, fail_on))

@@ -116,3 +116,21 @@ def test_prompt_includes_caller_snippets(tmp_path):
     prompt = build_prompt(f, index.get(f.function))
     assert "Call sites of `find_dupes`" in prompt
     assert "find_dupes(records)" in prompt
+
+
+def test_suppressed_findings_shown_without_verbose(tmp_path):
+    from perf_lint.analysis import MED, Finding
+    from perf_lint.report import render, render_json
+    import json as _json
+
+    kept = Finding("a.py", 1, "g", MED, "O(n*m)", "kept")
+    supp = Finding("b.py", 2, "h", MED, "O(n*m)", "demoted")
+    text = render([kept], verbose=False, suppressed=[(supp, "[BENIGN] tiny")])
+    assert "b.py:2" in text  # visible even without --verbose
+    assert "suppressed by adjudication" in text
+
+    data = _json.loads(render_json([kept], suppressed=[(supp, "[BENIGN] tiny")]))
+    supp_rows = [d for d in data if d.get("suppressed")]
+    assert len(supp_rows) == 1
+    assert supp_rows[0]["file"] == "b.py"
+    assert supp_rows[0]["suppressed_reason"] == "[BENIGN] tiny"

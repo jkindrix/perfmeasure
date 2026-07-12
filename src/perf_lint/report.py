@@ -26,8 +26,10 @@ def render(
         )
     if shown:
         lines.append("")
-    if suppressed and verbose:
-        lines.append("suppressed by adjudication:")
+    if suppressed:
+        # demote, don't hide: adjudication can wrongly suppress a real finding
+        # (measured on Rust), so suppressed findings stay visible for review
+        lines.append("suppressed by adjudication (review before trusting):")
         for f, reason in suppressed:
             lines.append(f"  {f.file}:{f.line} {f.complexity} — {reason}")
         lines.append("")
@@ -40,9 +42,7 @@ def render(
     else:
         summary = "No findings."
     if suppressed:
-        summary += f" — {len(suppressed)} suppressed by adjudication"
-        if not verbose:
-            summary += " (--verbose to list)"
+        summary += f" — {len(suppressed)} suppressed by adjudication (listed above)"
     if unknown and not verbose:
         summary += f" — {unknown} unanalyzed (rerun with --verbose)"
     lines.append(summary)
@@ -55,21 +55,31 @@ def finding_id(f: Finding) -> str:
     return hashlib.sha1(stable.encode()).hexdigest()[:12]
 
 
-def render_json(findings: list[Finding], verbose: bool = False) -> str:
+def _finding_dict(f: Finding, suppressed_reason: str | None = None) -> dict:
+    d = {
+        "id": finding_id(f),
+        "file": f.file,
+        "line": f.line,
+        "function": f.function,
+        "severity": f.severity,
+        "complexity": f.complexity,
+        "message": f.message,
+    }
+    if suppressed_reason is not None:
+        d["suppressed"] = True
+        d["suppressed_reason"] = suppressed_reason
+    return d
+
+
+def render_json(
+    findings: list[Finding],
+    verbose: bool = False,
+    suppressed: list[tuple[Finding, str]] | None = None,
+) -> str:
     shown = [f for f in findings if verbose or f.severity != UNKNOWN]
     shown.sort(key=lambda f: (f.file, f.line, _ORDER[f.severity]))
-    return json.dumps(
-        [
-            {
-                "id": finding_id(f),
-                "file": f.file,
-                "line": f.line,
-                "function": f.function,
-                "severity": f.severity,
-                "complexity": f.complexity,
-                "message": f.message,
-            }
-            for f in shown
-        ],
-        indent=2,
-    )
+    # demote, don't hide: suppressed findings stay in the JSON with a flag so
+    # machine consumers (CI) can see a wrongly-suppressed true positive
+    out = [_finding_dict(f) for f in shown]
+    out += [_finding_dict(f, reason) for f, reason in (suppressed or [])]
+    return json.dumps(out, indent=2)
