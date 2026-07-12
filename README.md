@@ -65,11 +65,20 @@ mod.py::load_config     UNDRIVABLE(unsupported_type: param 'conn' (Connection))
    function is declared undrivable.
 3. **Measure** — wall time (GC paused in Python, warmup, min-of-reps,
    sub-microsecond calls batched) and peak heap allocation — `tracemalloc`
-   in Python (separate pass so tracing never distorts timing); a counting
-   `#[global_allocator]` in the generated Rust harness (sees every heap
-   byte, built `--release` with `black_box` so the optimizer can't delete
-   the work, panics caught as structured errors). Hangs are killed and
-   recorded as TIMEOUT points; crashes are data, not failures.
+   in Python (separate pass, GC paused there too, so tracing never
+   distorts timing and cycle collection never shrinks the peak
+   nondeterministically); a counting `#[global_allocator]` in the
+   generated Rust harness (sees every heap byte, built `--release` under
+   the **target workspace's own `[profile.release]`** — lto,
+   codegen-units, opt-level mirrored; `panic=unwind` forced and any
+   divergence recorded in the JSON `opt_profile` — with `black_box` so
+   the optimizer can't delete the work, panics caught as structured
+   errors). Single-function mode (`fn`) uses a generous rep tier
+   (warmup 2, up to 30 reps, ≥50 ms per size); `scan` stays lean. Hangs
+   are killed and recorded as TIMEOUT points; crashes are data, not
+   failures; a call killed only because the per-function budget ran out
+   is labeled `deadline_exhausted` — a scheduling fact, never blamed on
+   the function.
    In-place mutators are detected by input fingerprinting and re-driven on
    fresh inputs each rep (`mutates_input`); memoized functions are detected
    by warmup-vs-rep timing and refit on first-call times
@@ -92,7 +101,7 @@ and Rust, O(1) through O(2ⁿ) — typed, unhinted (probing), mutating,
 memoized, cache-bound, panicking, methods, constructed instances, and
 undrivable-by-design.
 <!-- gate:begin (written by `python evals/harness.py --update-readme`; do not edit) -->
-Current run: **73/73 time classes** (48 exact, rest ambiguous-containing-truth, mean ambiguity width 1.34), **20/20 space classes**, **7/7 undrivable recall** — full gate in ~177 s.
+Current run: **79/79 time classes** (60 exact, rest ambiguous-containing-truth, mean ambiguity width 1.59), **25/25 space classes**, **8/8 undrivable recall** — full gate in ~153 s.
 <!-- gate:end -->
 Drivability on real projects is tracked separately as a regression
 metric (`python evals/wild.py`).
@@ -120,6 +129,18 @@ metric (`python evals/wild.py`).
   `list[int]` doesn't prove the measurement is semantically meaningful;
   probed results are capped at medium confidence and the generator spec
   is in the JSON record for audit.
+- **Batched points are warm-cache points.** Sub-10 µs calls are batched
+  over the same input buffers (like every microbenchmark harness), so
+  memory-bound cost can read low at small n; points carry
+  `batched: true` so the regime is auditable. `black_box` is best-effort
+  by its documented contract — a nontrivial compiled function reading
+  flat at sub-nanosecond per call is flagged
+  `possible_optimizer_elision` rather than reported as a measurement.
+- **First-call state retention is flagged.** A Rust `&self` method whose
+  first call leaves heap behind (memo table, interner, lazy static) gets
+  `state_retained_after_first_call` and a confidence demotion — later
+  reps may have measured the cached path. Python memoizers are refit on
+  first-call timings (`suspected_memoization`).
 - **Methods and instance params are measured against constructed
   state.** Methods and struct/class-typed params are driven with a fixed
   fresh instance built via `Default`, `new()`, unit structs, Python
@@ -142,3 +163,18 @@ metric (`python evals/wild.py`).
 - Adding a language = writing a runner that speaks the JSON-stdio
   protocol (abstract input specs in, seconds + peak bytes out) — the
   core never learns language semantics.
+
+## Prior art
+
+Empirical complexity inference is not new: [pberkes/big_O](https://github.com/pberkes/big_O)
+(Python, time only), [plasma-umass/bigO](https://github.com/plasma-umass/bigO)
+(Python, time+space, passively observes whatever inputs your program
+happens to run), Meta's [BigO(Bench)](https://facebookresearch.github.io/BigOBench/)
+(benchmark infrastructure around competitive-programming tasks), and
+Google Benchmark's `.Complexity()` (C++, time only) all fit classes to
+measurements. What none of them offer, and perfmeasure does, is the
+combination: **active** shape-controlled doubling ladders with
+worst-across-tested-shapes reporting, time **and** space, explicit
+AMBIGUOUS sets with provenance and confidence on every answer, and both
+Python and Rust from one tool — the generated instrumented-`--release`
+Rust harness with complexity inference has no peer we know of.
