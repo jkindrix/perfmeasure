@@ -1,0 +1,23 @@
+{
+  "first_element": {"time": "O(1)", "space": null},
+  "is_even": {"time": "O(1)", "space": null},
+  "binary_search": {"time": "O(log n)", "space": null},
+  "halving_steps": {"time": "O(log n)", "space": null},
+  "total": {"time": "O(n)", "space": "O(1)"},
+  "copy_list": {"time": "O(n)", "space": "O(n)"},
+  "grow_linear": {"time": "O(n)", "space": "O(n)"},
+  "reverse_string": {"time": "O(n)", "space": "O(n)"},
+  "dict_get_all": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"], "space": null,
+                   "note": "cache-bound: random probes into a multi-MB dict scale superlinearly in wall time; one adjacent class of inflation is accepted measured truth"},
+  "sort_values": {"time": "O(n log n)", "space": "O(n)"},
+  "unique_sorted": {"time": "O(n log n)", "space": "O(n)"},
+  "insertion_sort": {"time": "O(n^2)", "space": "O(n)", "worst_shape_not": "sorted"},
+  "contains_duplicate_quadratic": {"time": "O(n^2)", "space": null},
+  "count_char_pairs": {"time": "O(n^2)", "space": null},
+  "build_prefix_lists": {"time": "O(n^2)", "space": "O(n^2)"},
+  "count_triples": {"time": "O(n^3)", "space": null},
+  "count_subsets": {"time": "O(2^n)", "space": null},
+  "fib": {"time": "O(2^n)", "space": null},
+  "untyped_mystery": {"provenance": "UNDRIVABLE"},
+  "takes_callback": {"provenance": "UNDRIVABLE"}
+}

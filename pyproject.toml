@@ -1,16 +1,12 @@
 [project]
-name = "perf-lint"
+name = "perfmeasure"
 version = "0.1.0"
-description = "Static Big-O performance linter: flags likely-accidental O(n^2)+ code across languages"
+description = "Empirical complexity measurement: runs functions at growing input sizes and curve-fits time and space to Big-O classes"
 requires-python = ">=3.10"
-dependencies = [
-    "tree-sitter>=0.23",
-    "tree-sitter-python>=0.23",
-    "tree-sitter-rust>=0.24.2",
-]
+dependencies = []
 
 [project.scripts]
-perf-lint = "perf_lint.cli:main"
+perfmeasure = "perfmeasure.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
@@ -20,4 +16,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/perf_lint"]
+packages = ["src/perfmeasure"]

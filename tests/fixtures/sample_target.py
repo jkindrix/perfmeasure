@@ -1,0 +1,18 @@
+def linear(xs: list[int]) -> int:
+    acc = 0
+    for x in xs:
+        acc += x
+    return acc
+
+
+def rejects_everything(xs: list[int]) -> int:
+    raise ValueError("nope")
+
+
+def untyped(xs):
+    return xs
+
+
+def prints_to_stdout(xs: list[int]) -> int:
+    print("target noise on stdout")
+    return len(xs)
