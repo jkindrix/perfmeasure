@@ -141,6 +141,21 @@ def test_nested_chains_flagged():
     assert findings[0].complexity == "O(n*m)"
 
 
+def test_flatten_chain_emits_single_loop():
+    # `for x in expr.into_iter().flatten()` must produce exactly one loop node,
+    # not one from the for + one from re-detecting the inner sub-chain
+    findings = analyze("""
+        fn process(data: &Vec<u8>, parser: &mut Parser) {
+            for byte in data {
+                for result in parser.parse(*byte).into_iter().flatten() {
+                    let _ = result;
+                }
+            }
+        }
+    """)
+    assert len(findings) == 1  # was 2 before flatten was recognized
+
+
 def test_chain_consumed_by_next_is_constant():
     # into_iter().next() takes one element — O(1), not a pass over rows
     findings = analyze("""

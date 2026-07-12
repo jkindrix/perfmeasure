@@ -62,7 +62,9 @@ class PythonAdapter:
                     params=self._param_names(child.child_by_field_name("parameters")),
                 )
                 body = child.child_by_field_name("body")
-                self._kinds, self._grown, self._empty_init = self._infer_context(body)
+                (
+                    self._kinds, self._grown, self._empty_init, self._aliases
+                ) = self._infer_context(body)
                 fn.body = self._collect(body)
                 out.append(fn)
                 self._find_functions(body, path, out)
@@ -91,10 +93,14 @@ class PythonAdapter:
 
     # -- local kind/growth inference -------------------------------------------
 
-    def _infer_context(self, body: TSNode) -> tuple[dict[str, str], set[str], set[str]]:
+    def _infer_context(
+        self, body: TSNode
+    ) -> tuple[dict[str, str], set[str], set[str], dict[str, str]]:
         kinds: dict[str, str] = {}
         grown: set[str] = set()
         empty_init: set[str] = set()
+        alias_of: dict[str, str] = {}  # name -> bare identifier it was set to
+        ambiguous: set[str] = set()  # reassigned or set to a non-identifier
 
         def walk(node: TSNode) -> None:
             if node.type == "function_definition":
@@ -104,6 +110,14 @@ class PythonAdapter:
                 right = node.child_by_field_name("right")
                 if left is not None and right is not None and left.type == "identifier":
                     name = self._text(left)
+                    if right.type == "identifier" and name not in ambiguous:
+                        target = self._text(right)
+                        if name in alias_of and alias_of[name] != target:
+                            ambiguous.add(name)  # aliased to two different names
+                        else:
+                            alias_of[name] = target
+                    else:
+                        ambiguous.add(name)  # assigned to a non-identifier
                     kind = self._expr_kind(right, kinds)
                     if kind != "unknown":
                         kinds[name] = kind
@@ -132,7 +146,19 @@ class PythonAdapter:
                 walk(child)
 
         walk(body)
-        return kinds, grown, empty_init
+
+        def resolve(name: str, seen: frozenset[str]) -> str:
+            target = alias_of.get(name)
+            if target is None or name in ambiguous or target in seen:
+                return name
+            return resolve(target, seen | {name})
+
+        aliases = {
+            n: resolve(n, frozenset())
+            for n in alias_of
+            if n not in ambiguous and resolve(n, frozenset()) != n
+        }
+        return kinds, grown, empty_init, aliases
 
     def _is_empty_literal(self, node: TSNode) -> bool:
         t = node.type
@@ -340,7 +366,10 @@ class PythonAdapter:
             for c in node.named_children:
                 return self._size_symbol(c)
         if t == "identifier":
-            return f"size:{text}", text, text
+            # canonicalize simple aliases (`ys = xs`) so loops over xs and ys
+            # count as the same collection; display keeps the written name
+            canon = self._aliases.get(text, text)
+            return f"size:{canon}", text, canon
         if t == "attribute":
             return f"size:{text}", text, self._root_name(node)
         if t in LITERALS:

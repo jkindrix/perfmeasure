@@ -262,6 +262,32 @@ def test_helper_not_flagged_outside_loop():
     assert findings == []
 
 
+def test_alias_makes_nesting_quadratic():
+    findings = analyze("""
+        def dupes(items):
+            same = items
+            for a in items:
+                for b in same:
+                    if a == b:
+                        pass
+    """)
+    assert [f.severity for f in findings] == [HIGH]
+    assert findings[0].complexity == "O(n^2)"
+
+
+def test_reassigned_name_not_treated_as_alias():
+    findings = analyze("""
+        def scan(xs, ys):
+            zs = xs
+            zs = ys
+            for a in xs:
+                for b in zs:
+                    pass
+    """)
+    # zs is reassigned -> ambiguous -> not an alias of xs -> independent (MED)
+    assert [f.severity for f in findings] == [MED]
+
+
 def test_method_call_does_not_match_global_function():
     findings = analyze("""
         def replace(template, ctx):

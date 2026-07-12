@@ -12,10 +12,10 @@ RUST_LANGUAGE = Language(tsrust.language())
 ITER_METHODS = {
     "iter", "into_iter", "iter_mut", "chars", "bytes", "lines",
     "split", "split_whitespace", "keys", "values",
-    "map", "filter", "filter_map", "flat_map", "for_each", "fold",
+    "map", "filter", "filter_map", "flat_map", "flatten", "for_each", "fold",
     "any", "all", "find", "position", "count", "sum", "product",
-    "collect", "enumerate", "zip", "chain", "rev",
-    "take_while", "skip_while", "inspect",
+    "collect", "enumerate", "zip", "chain", "rev", "cloned", "copied",
+    "take_while", "skip_while", "inspect", "peekable", "scan",
     "max_by", "min_by", "max_by_key", "min_by_key",
 }
 # single-pass wrappers that preserve the receiver's size symbol
