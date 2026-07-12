@@ -323,5 +323,9 @@
     "type_source": {
       "value": "probed"
     }
+  },
+  "passthrough": {
+    "time": "O(1)",
+    "space": "O(1)"
   }
 }

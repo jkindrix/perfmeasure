@@ -163,5 +163,19 @@
   "rs_halving_f64": {
     "time": "O(log n)",
     "space": null
+  },
+  "rs_arch_gated": {
+    "provenance": "UNDRIVABLE",
+    "detail_contains": "cfg_inactive",
+    "undrivable_kind": "inherent"
+  },
+  "rs_unsafe_sum": {
+    "provenance": "UNDRIVABLE",
+    "detail_contains": "unsafe fn",
+    "undrivable_kind": "inherent"
+  },
+  "rs_opt_needs_some": {
+    "time": "O(n)",
+    "space": "O(1)"
   }
 }

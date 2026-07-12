@@ -139,7 +139,15 @@ def _arm(fn: dict) -> str:
         tag, style, rtype = p["spec_type"], p["style"], p["rust_type"]
         cast = p.get("cast")
         if style == "none":                  # Option<T>: None type-infers
-            exprs.append("None")
+            some = p.get("type_ref")
+            if some:
+                # planner may flip None -> Some(fixed) after a rejection
+                lines.append(
+                    f'            let a{i} = if req.inputs[{i}].spec_type '
+                    f'== "opt_some" {{ {some} }} else {{ None }};')
+                exprs.append(f"a{i}")
+            else:
+                exprs.append("None")
             continue
         if style == "borrow_ctor":           # fixed default instance
             lines.append(f"            let a{i} = {p['type_ref']};")

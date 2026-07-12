@@ -719,7 +719,16 @@ def do_call(req):
                 tracemalloc.stop()
                 gc.enable()
             try:
-                ret_deepsize = _deepsize(r)
+                recv = getattr(fn, "__self__", None)
+                if any(r is a for a in args) or (recv is not None
+                                                 and r is recv):
+                    # pass-through return: the object already existed, so
+                    # its size says nothing about ALLOCATION — feeding it
+                    # to the blindspot check would fake an O(n) space
+                    notes.append("ret_is_input")
+                    ret_deepsize = None
+                else:
+                    ret_deepsize = _deepsize(r)
             except Exception:
                 ret_deepsize = None
             del r

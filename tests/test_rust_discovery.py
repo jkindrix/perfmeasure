@@ -163,3 +163,21 @@ def test_release_profile_mirrors_target_and_names_divergence(tmp_path):
     assert profile["codegen-units"] == 1
     assert any("panic" in n for n in notes), \
         "forcing unwind against panic=abort must be a named divergence"
+
+
+def test_foreign_arch_cfg_filtered_at_discovery():
+    # x86_64 host: wasm32-gated fns must be labeled, not compile-retried;
+    # the all(...) form resolves via its known-false conjunct
+    fns = _by_name()
+    assert "cfg_inactive" in fns["wasm_only"]["skip_reason"]
+    assert "cfg_inactive" in fns["wasm_simd_only"]["skip_reason"]
+
+
+def test_unsafe_fns_skipped_with_reason():
+    assert "unsafe fn" in _by_name()["unsafe_head"]["skip_reason"]
+
+
+def test_option_param_carries_some_fallback():
+    fns = _by_name()
+    assert fns["opt_start"]["params"][1]["type_ref"] == "Some(1usize)"
+    assert fns["opt_label"]["params"][1]["type_ref"] == 'Some("a")'

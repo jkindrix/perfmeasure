@@ -82,3 +82,37 @@ def test_shape_fallback_to_random_for_unsupported():
     d_spec, keys_spec = p.specs("reversed", 32)
     assert d_spec.shape == "random"        # dict_si doesn't support reversed
     assert keys_spec.shape == "reversed"
+
+
+def test_variants_opt_only_flips_once():
+    from perfmeasure.core.planner import variants
+    d = desc([ParamInfo("xs", "list_int"),
+              ParamInfo("start", "opt_none", type_ref="Some(1usize)")])
+    assert variants(d) == [(0, False), (0, True)]
+    p, _ = plan(d, fixed_variant=0, opt_some=True)
+    specs = p.specs("random", 8)
+    assert specs[1].type_tag == "opt_some"
+    assert p.fixed_params["start"] == "Some(1usize)"
+
+
+def test_variants_no_fallbacks_single():
+    from perfmeasure.core.planner import variants
+    d = desc([ParamInfo("xs", "list_int")])
+    assert variants(d) == [(0, False)]
+    p, _ = plan(d)
+    assert not p.has_variants
+
+
+def test_variants_ints_and_opt_compose():
+    from perfmeasure.core.planner import variants
+    d = desc([ParamInfo("xs", "list_int"), ParamInfo("k", "int_mag"),
+              ParamInfo("o", "opt_none", type_ref="Some(1u8)")])
+    assert len(variants(d)) == 6
+
+
+def test_opt_without_some_expr_stays_none():
+    from perfmeasure.core.planner import variants
+    d = desc([ParamInfo("xs", "list_int"), ParamInfo("o", "opt_none")])
+    assert variants(d) == [(0, False)]
+    p, _ = plan(d, opt_some=True)     # flip without an expr: stays None
+    assert p.specs("random", 8)[1].type_tag == "opt_none"

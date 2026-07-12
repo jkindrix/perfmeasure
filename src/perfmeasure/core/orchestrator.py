@@ -69,14 +69,15 @@ def measure_function(session: RunnerSession, desc: FunctionDescriptor,
         return report
 
     run = None
-    for variant in range(planner.FIXED_VARIANTS):
-        drive, reason = planner.plan(desc, fixed_variant=variant)
+    for iv, opt_some in planner.variants(desc):
+        drive, reason = planner.plan(desc, fixed_variant=iv,
+                                     opt_some=opt_some)
         if drive is None:
             report.provenance = UNDRIVABLE
             report.provenance_detail = reason
             return report
         run = _run_ladders(session, desc, drive, budget, deadline, hard_wall)
-        if run.rejected is None or not drive.has_fixed_ints:
+        if run.rejected is None or not drive.has_variants:
             break
 
     report.driver_params = drive.driver_params

@@ -28,11 +28,35 @@ FIXED_TAGS = {"bool_": 0, "duration_ms": 1, "opt_none": 0, "instance_": 0}
 FIXED_TAG_DISPLAY = {"bool_": False, "duration_ms": "1ms", "opt_none": None}
 
 
-def plan(desc: FunctionDescriptor, fixed_variant: int = 0
-         ) -> tuple[DrivePlan | None, str | None]:
+def _opt_flippable(desc: FunctionDescriptor) -> bool:
+    return any(p.spec_type == "opt_none" and p.type_ref
+               for p in desc.params if not p.omitted)
+
+
+def variants(desc: FunctionDescriptor) -> list[tuple[int, bool]]:
+    """The meaningful (fixed_variant, opt_some) fallback combinations the
+    orchestrator may walk on first-size rejection. Only functions that
+    actually hold ints fixed get the int strategies, and only functions
+    with a synthesizable Some get the Option flip — anything else would
+    replay identical inputs for an identical rejection.
+
+    Mirrors plan()'s driver selection: ints are held fixed only when a
+    collection param is the driver."""
+    active = [p for p in desc.params if not p.omitted]
+    scalable = [p for p in active if p.spec_type in SCALABLE_TAGS]
+    has_fixed = (any(p.spec_type not in MAGNITUDE_TAGS for p in scalable)
+                 and any(p.spec_type in MAGNITUDE_TAGS for p in scalable))
+    ivs = range(FIXED_VARIANTS) if has_fixed else (0,)
+    opts = (False, True) if _opt_flippable(desc) else (False,)
+    return [(iv, opt) for opt in opts for iv in ivs]
+
+
+def plan(desc: FunctionDescriptor, fixed_variant: int = 0,
+         opt_some: bool = False) -> tuple[DrivePlan | None, str | None]:
     """Returns (plan, None) or (None, undrivable_reason). fixed_variant
-    selects the fallback strategy for held-fixed int params — the
-    orchestrator walks variants when the first ladder call is rejected."""
+    selects the fallback strategy for held-fixed int params; opt_some
+    flips synthesizable Option params from None to Some(...) — the
+    orchestrator walks variants() when the first ladder call is rejected."""
     if not desc.drivable:
         return None, desc.skip_reason or "not drivable"
 
@@ -73,9 +97,15 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
         fixed_desc = f"half_of:{driver_names[0]}"
     fixed_params = {p.name: fixed_desc for p in fixed_ints}
     has_fixed_ints = bool(fixed_ints)
-    fixed_params.update(
-        {p.name: (p.type_ref if p.spec_type == "instance_"
-                  else FIXED_TAG_DISPLAY[p.spec_type]) for p in fixed_other})
+
+    def _fixed_display(p):
+        if p.spec_type == "instance_":
+            return p.type_ref
+        if p.spec_type == "opt_none" and opt_some and p.type_ref:
+            return p.type_ref                  # e.g. "Some(1usize)"
+        return FIXED_TAG_DISPLAY[p.spec_type]
+
+    fixed_params.update({p.name: _fixed_display(p) for p in fixed_other})
 
     def specs(shape: str, size: int) -> list[GenSpec]:
         out = []
@@ -88,7 +118,10 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
                 out.append(GenSpec(p.spec_type, s, size,
                                    seed_for(f"{desc.fid}#{p.name}", s, size)))
             elif p.spec_type in FIXED_TAGS:
-                out.append(GenSpec(p.spec_type, "fixed",
+                tag = p.spec_type
+                if tag == "opt_none" and opt_some and p.type_ref:
+                    tag = "opt_some"     # harness arm branches on this
+                out.append(GenSpec(tag, "fixed",
                                    FIXED_TAGS[p.spec_type],
                                    seed_for(desc.fid, "fixed", 0),
                                    type_ref=p.type_ref))
@@ -107,4 +140,5 @@ def plan(desc: FunctionDescriptor, fixed_variant: int = 0
 
     return DrivePlan(driver_params=driver_names, fixed_params=fixed_params,
                      shapes=shapes, specs=specs,
-                     has_fixed_ints=has_fixed_ints), None
+                     has_fixed_ints=has_fixed_ints,
+                     has_variants=len(variants(desc)) > 1), None

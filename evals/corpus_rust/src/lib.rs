@@ -19,6 +19,20 @@ pub fn rs_binary_search(xs: &[i64], target: i64) -> usize {
     lo
 }
 
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+pub fn rs_arch_gated(xs: &[i64]) -> i64 {
+    xs.iter().sum()
+}
+
+pub unsafe fn rs_unsafe_sum(xs: &[i64]) -> i64 {
+    xs.iter().sum()
+}
+
+pub fn rs_opt_needs_some(xs: &[i64], start: Option<usize>) -> i64 {
+    let s = start.unwrap(); // rejects the None drive; Some fallback rescues
+    xs[s..].iter().sum()
+}
+
 pub fn rs_halving_f64(x: f64) -> u64 {
     let mut v = x.abs();
     let mut steps = 0;

@@ -122,6 +122,8 @@ class DrivePlan:
                                        # the fallback variants; a retry
                                        # without them replays identical
                                        # inputs for an identical rejection
+    has_variants: bool = False         # any fallback dimension exists
+                                       # (fixed ints, Option None->Some)
 
 
 # --- measurement points and fits ---------------------------------------------

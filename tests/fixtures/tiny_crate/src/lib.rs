@@ -210,3 +210,22 @@ mod tests {
 pub fn uses_private(xs: &[i64]) -> i64 {
     private_mod::hidden(xs)
 }
+
+#[cfg(target_arch = "wasm32")]
+pub fn wasm_only(xs: &[i64]) -> i64 {
+    xs[0]
+}
+
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+pub fn wasm_simd_only(xs: &[i64]) -> i64 {
+    xs[0]
+}
+
+pub unsafe fn unsafe_head(xs: &[i64]) -> i64 {
+    xs[0]
+}
+
+pub fn opt_start(xs: &[i64], start: Option<usize>) -> i64 {
+    let s = start.unwrap_or(0);
+    xs[s..].iter().sum()
+}

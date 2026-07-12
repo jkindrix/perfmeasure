@@ -10,6 +10,7 @@ the cases textual matching gets wrong.
 from __future__ import annotations
 
 import json
+import platform
 import re
 import subprocess
 import sys
@@ -372,6 +373,27 @@ def _is_pub(node) -> bool:
     return vis is not None and vis.text == b"pub"
 
 
+_OPT_SOME_INNER = {
+    "usize": "1usize", "u64": "1u64", "i64": "1i64", "u32": "1u32",
+    "i32": "1i32", "u16": "1u16", "i16": "1i16", "u8": "1u8", "i8": "1i8",
+    "f64": "1.0f64", "f32": "1.0f32", "bool": "false",
+    "&str": '"a"', "String": 'String::from("a")',
+}
+
+
+def _opt_some_expr(inner: str, ctors, module_ctx) -> str | None:
+    """A fixed small Some(...) for an Option param, when the inner type is
+    a literal-expressible scalar/string or a synthesizable same-crate
+    struct. None means the Some fallback is not available."""
+    if inner in _OPT_SOME_INNER:
+        return f"Some({_OPT_SOME_INNER[inner]})"
+    if re.fullmatch(r"[A-Z]\w*", inner):
+        ctor = ctors.resolve(inner, module_ctx)
+        if ctor is not None:
+            return f"Some({ctor})"
+    return None
+
+
 def _cfg_test(attrs: list) -> bool:
     return any(b"cfg" in a.text and b"test" in a.text for a in attrs)
 
@@ -380,19 +402,39 @@ _HOST = {"unix": True, "windows": False,
          'target_os="linux"': True, 'target_os="windows"': False,
          'target_os="macos"': False,
          'target_family="unix"': True, 'target_family="windows"': False}
+# arch cfgs: claim False only when the host arch is itself recognized —
+# an exotic host must not silently disable everything
+_ARCHES = {"x86_64", "x86", "aarch64", "arm", "wasm32", "wasm64",
+           "riscv64", "powerpc64", "s390x", "loongarch64", "mips64"}
+_HOST_ARCH = platform.machine()
+if _HOST_ARCH in _ARCHES:
+    _HOST.update({f'target_arch="{a}"': a == _HOST_ARCH for a in _ARCHES})
 if not sys.platform.startswith("linux"):  # pragma: no cover
     _HOST = {}  # only evaluate cfgs on the platform this table describes
 
 
 def _cfg_inactive(attrs: list) -> str | None:
-    """Simple platform cfgs (#[cfg(windows)], #[cfg(target_os = "...")])
-    that are OFF on this host. Complex expressions (any/all/not) are not
-    evaluated — the compile-retry loop remains their backstop."""
+    """Platform cfgs that are provably OFF on this host: simple keys from
+    the table, plus sound all()/any() composition — all() is false when
+    ANY conjunct is known-false, any() only when EVERY disjunct is.
+    Unknown terms stay unknown; the compile-retry loop remains the
+    backstop for everything not provable here (not(), features,
+    target_feature)."""
     for a in attrs:
         text = re.sub(r"\s+", "", a.text.decode())
         m = re.fullmatch(r"#\[cfg\(([^()]*)\)\]", text)
         if m and _HOST.get(m.group(1)) is False:
             return m.group(1)
+        m = re.fullmatch(r"#\[cfg\((all|any)\(([^()]*)\)\)\]", text)
+        if not m:
+            continue
+        op, terms = m.group(1), m.group(2).split(",")
+        if op == "all":
+            for t in terms:
+                if _HOST.get(t) is False:
+                    return t
+        elif terms and all(_HOST.get(t) is False for t in terms):
+            return f"any({m.group(2)})"
     return None
 
 
@@ -491,6 +533,11 @@ def _describe(node, path, crate, fid_path, module_ctx, module_pub,
         # calling an async fn only constructs the future; timing that
         # would be a silent lie about the actual work
         return skip("async fn (harness does not execute futures)")
+    if any(c.type == "function_modifiers" and b"unsafe" in c.text
+           for c in node.children):
+        # the safety contract is not machine-knowable; a call that
+        # ignores it measures undefined behavior, not the function
+        return skip("unsafe fn (safety contract cannot be assumed)")
     if node.child_by_field_name("type_parameters") is not None:
         return skip("generic")
 
@@ -528,6 +575,10 @@ def _describe(node, path, crate, fid_path, module_ctx, module_pub,
         type_ref = None
         if entry is None and norm.startswith("Option<"):
             entry = ("opt_none", "none")     # None type-infers at any call site
+            # a synthesizable Some(inner) rides along as the fallback the
+            # planner may flip to when the None call is rejected
+            # (`Option::unwrap()` inside the target)
+            type_ref = _opt_some_expr(norm[7:-1], ctors, module_ctx)
         if entry is None:
             # same-crate constructible struct: a fixed default instance
             m = re.fullmatch(r"(&?)([A-Z]\w*)", norm)

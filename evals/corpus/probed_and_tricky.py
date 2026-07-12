@@ -70,3 +70,9 @@ def needs_middle_index(xs: list[int], i: int) -> int:
 
 def unprobeable(cfg):
     return cfg.host + ":" + str(cfg.port)   # no generated input satisfies this
+
+
+# --- pass-through returns -----------------------------------------------------------
+
+def passthrough(xs: list[int]) -> list[int]:
+    return xs
