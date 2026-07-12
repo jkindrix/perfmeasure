@@ -163,6 +163,37 @@ impl NoCtor {
     }
 }
 
+pub struct Index {
+    cap: usize,
+    tag: String,
+}
+
+impl Index {
+    pub fn new(cap: usize, tag: String) -> Self {
+        Index { cap, tag }
+    }
+
+    pub fn lookup_all(&self, xs: &[i64]) -> usize {
+        let d = (self.cap + self.tag.len()) as i64 + 1;
+        xs.iter().filter(|x| **x % d == 0).count()
+    }
+}
+
+pub struct Loader {
+    opts: Opts,
+}
+
+impl Loader {
+    pub fn new(opts: &Opts, limit: Option<usize>) -> Result<Self, String> {
+        let _ = limit;
+        Ok(Loader { opts: Opts { strict: opts.strict } })
+    }
+
+    pub fn count_strict(&self, xs: &[i64]) -> usize {
+        if self.opts.strict { 0 } else { xs.len() }
+    }
+}
+
 mod private_mod {
     pub fn hidden(xs: &[i64]) -> i64 {
         xs.len() as i64

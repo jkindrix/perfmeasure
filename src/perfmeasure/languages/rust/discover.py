@@ -109,6 +109,7 @@ def discover_crate(crate_root: Path) -> list[dict]:
     crate = crate_name(crate_root / "Cargo.toml").replace("-", "_")
     ctors = Ctors(crate)
     _collect_ctors(lib, crate, [], crate_root / "src", ctors)
+    ctors.finalize()
     functions: list[dict] = []
     _scan_file(lib, crate, [], crate_root / "src", functions,
                module_pub=True, ctors=ctors)
@@ -116,23 +117,35 @@ def discover_crate(crate_root: Path) -> list[dict]:
 
 
 class Ctors:
-    """Zero-arg construction expressions for same-crate types, collected
-    textually: unit structs, #[derive(Default)], or an inherent zero-arg
-    `pub fn new()`. Compile-retry backstops what the text gets wrong."""
+    """Construction expressions for same-crate types, collected textually:
+    unit structs, #[derive(Default)], a zero-arg `pub fn new()`, or —
+    after finalize() — `new(args)` with synthesized arguments (empty
+    containers and small scalars type-infer, so most args need no type
+    knowledge). Compile-retry backstops what the text gets wrong."""
 
     def __init__(self, crate: str):
         self.crate = crate
         self.by_path: dict[str, str] = {}     # crate::mod::X -> ctor expr
         self.by_name: dict[str, list[str]] = {}
+        # crate::mod::X -> (mod_path, [param norm types], ret norm type)
+        self.new_sigs: dict[str, tuple[list[str], list[str], str]] = {}
 
     def add(self, mod_path: list[str], name: str, expr: str,
             override: bool = False) -> None:
         path = "::".join([self.crate, *mod_path, name])
         if override or path not in self.by_path:
             self.by_path[path] = expr
-            self.by_name.setdefault(name, [])
-            if path not in self.by_name[name]:
-                self.by_name[name].append(path)
+        self.by_name.setdefault(name, [])
+        if path not in self.by_name[name]:
+            self.by_name[name].append(path)
+
+    def add_new_sig(self, mod_path: list[str], name: str,
+                    param_types: list[str], ret: str) -> None:
+        path = "::".join([self.crate, *mod_path, name])
+        self.new_sigs.setdefault(path, (mod_path, param_types, ret))
+        self.by_name.setdefault(name, [])
+        if path not in self.by_name[name]:
+            self.by_name[name].append(path)
 
     def resolve(self, name: str, mod_path: list[str]) -> str | None:
         """Same-module first, else a crate-unique name match."""
@@ -141,7 +154,85 @@ class Ctors:
             return self.by_path[exact]
         paths = self.by_name.get(name, [])
         if len(paths) == 1:
-            return self.by_path[paths[0]]
+            return self.by_path.get(paths[0])
+        return None
+
+    def finalize(self) -> None:
+        """Synthesize `Type::new(args)` expressions for types that lack a
+        simpler constructor. Recursion bounded by a cycle guard."""
+        for path in list(self.new_sigs):
+            self._ctor_for(path, set())
+
+    def _ctor_for(self, path: str, seen: set[str]) -> str | None:
+        if path in self.by_path:
+            return self.by_path[path]
+        if path not in self.new_sigs or path in seen:
+            return None
+        seen = seen | {path}
+        mod_path, param_types, ret = self.new_sigs[path]
+        name = path.rsplit("::", 1)[1]
+        if not (ret in ("Self", name)
+                or ret.startswith((f"Result<Self", f"Result<{name}",
+                                   f"Option<Self", f"Option<{name}"))):
+            return None
+        args = []
+        for t in param_types:
+            expr = self._synth_arg(t, mod_path, seen)
+            if expr is None:
+                return None
+            args.append(expr)
+        expr = f"{path}::new({', '.join(args)})"
+        if ret.startswith(("Result<", "Option<")):
+            expr += ".unwrap()"
+        self.by_path[path] = expr
+        return expr
+
+    def _synth_arg(self, norm: str, mod_path: list[str],
+                   seen: set[str]) -> str | None:
+        if norm in ("usize", "u64", "i64", "u32", "i32", "u16", "i16",
+                    "u8", "i8"):
+            return "1"
+        if norm in ("f64", "f32"):
+            return "1.0"
+        if norm == "bool":
+            return "false"
+        if norm == "&str":
+            return '"x"'
+        if norm == "String":
+            return '"x".to_string()'
+        if norm == "Duration":
+            return "std::time::Duration::from_millis(1)"
+        if norm == "PathBuf":
+            return "std::path::PathBuf::new()"
+        if norm == "&Path":
+            return 'std::path::Path::new("")'
+        if norm.startswith("Option<"):
+            return "None"                     # type-infers
+        if norm.startswith("Vec<"):
+            return "Vec::new()"               # type-infers
+        if norm.startswith("&["):
+            return "&[]"                      # type-infers
+        if norm.startswith("HashMap<"):
+            return "std::collections::HashMap::new()"
+        if norm.startswith("HashSet<"):
+            return "std::collections::HashSet::new()"
+        m = re.fullmatch(r"(&?)([A-Z]\w*)", norm)
+        if m:                                 # same-crate type: recurse
+            inner = self._resolve_or_synth(m.group(2), mod_path, seen)
+            if inner is not None:
+                return f"&{inner}" if m.group(1) else inner
+        return None
+
+    def _resolve_or_synth(self, name: str, mod_path: list[str],
+                          seen: set[str]) -> str | None:
+        exact = "::".join([self.crate, *mod_path, name])
+        got = self._ctor_for(exact, seen)
+        if got or exact in self.by_path:
+            return self.by_path.get(exact)
+        paths = self.by_name.get(name, [])
+        if len(paths) == 1:
+            return self._ctor_for(paths[0], seen) \
+                or self.by_path.get(paths[0])
         return None
 
 
@@ -196,14 +287,26 @@ def _collect_walk(node, path, crate, mod_path, src_root, ctors):
                 if member.type != "function_item":
                     continue
                 fname = member.child_by_field_name("name")
+                if fname is None or fname.text != b"new" \
+                        or not _is_pub(member) \
+                        or member.child_by_field_name("type_parameters"):
+                    continue
                 plist = member.child_by_field_name("parameters")
-                empty = plist is None or not any(
-                    p.type in ("parameter", "self_parameter")
-                    for p in plist.children)
-                if fname is not None and fname.text == b"new" \
-                        and _is_pub(member) and empty:
+                pnodes = [p for p in (plist.children if plist else [])
+                          if p.type in ("parameter", "self_parameter")]
+                if any(p.type == "self_parameter" for p in pnodes):
+                    continue                 # takes self: not a constructor
+                if not pnodes:
                     full = "::".join([crate, *mod_path, name])
                     ctors.add(mod_path, name, f"{full}::new()")
+                    continue
+                ptypes = []
+                for p in pnodes:
+                    tn = p.child_by_field_name("type")
+                    ptypes.append(_normalize(tn.text.decode()) if tn else "?")
+                rnode = member.child_by_field_name("return_type")
+                ret = _normalize(rnode.text.decode()) if rnode else "?"
+                ctors.add_new_sig(mod_path, name, ptypes, ret)
         elif child.type == "mod_item":
             name_node = child.child_by_field_name("name")
             if name_node is None or _cfg_test(attrs) or _cfg_inactive(attrs):
@@ -371,7 +474,7 @@ def _describe(node, path, crate, fid_path, module_ctx, module_pub,
             ctor = (ctors.resolve(type_name, module_ctx)
                     if type_name else None)
             if ctor is None:
-                return skip("method (self receiver; no zero-arg "
+                return skip("method (self receiver; no synthesizable "
                             f"constructor for {type_name})")
             receiver = ctor
             continue

@@ -24,6 +24,8 @@
   "rs_apply_opts": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"],
                     "expect_fixed": {"opts": "corpus_rust::RsOpts::new()"},
                     "expect_flag": "fixed_instance_inputs"},
+  "rs_count_multiples": {"time": "O(n)", "time_any": ["O(n)", "O(n log n)"],
+                         "expect_flag": "fixed_instance_inputs"},
 
   "rs_always_panics": {"provenance": "UNDRIVABLE"},
   "rs_takes_alias": {"provenance": "UNDRIVABLE"},

@@ -148,24 +148,81 @@ def _map_hint(hint) -> tuple[str | None, str]:
             return "set_int", ""
         return None, f"element type {args[0]!r}"
     if inspect.isclass(hint) and hint.__module__ not in ("builtins", "typing"):
-        # user-defined class: constructible zero-arg => a fixed instance
-        if _zero_arg_constructible(hint):
+        # user-defined class: constructible => a fixed instance
+        if _constructible(hint):
             return "instance_", f"{hint.__module__}:{hint.__qualname__}"
-        return None, (f"no zero-arg constructor for {hint.__qualname__}")
+        return None, (f"no synthesizable constructor for {hint.__qualname__}")
     return None, f"unsupported type {hint!r}"
 
 
 _ctor_cache: dict[type, bool] = {}
 
 
-def _zero_arg_constructible(cls) -> bool:
+def _constructible(cls) -> bool:
     if cls not in _ctor_cache:
         try:
-            cls()
+            _synth_instance(cls)
             _ctor_cache[cls] = True
         except Exception:
             _ctor_cache[cls] = False
     return _ctor_cache[cls]
+
+
+def _synth_instance(cls, depth=0):
+    """Zero-arg construction first; else synthesize the required __init__
+    args from type hints (small scalars, empty containers, None for
+    Optionals, recursion for class-typed args). Deterministic, so the
+    same instance state is rebuilt on every call op. Raises on failure."""
+    try:
+        return cls()
+    except Exception:
+        if depth >= 2:
+            raise
+    sig = inspect.signature(cls.__init__)
+    try:
+        hints = typing.get_type_hints(cls.__init__)
+    except Exception:
+        hints = getattr(cls.__init__, "__annotations__", {}) or {}
+    kwargs = {}
+    for p in list(sig.parameters.values())[1:]:          # skip self
+        if p.default is not p.empty or \
+                p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+            continue
+        kwargs[p.name] = _synth_value(hints.get(p.name, p.annotation), depth)
+    return cls(**kwargs)
+
+
+def _synth_value(hint, depth):
+    if hint is inspect.Parameter.empty:
+        raise ValueError("cannot synthesize an unhinted required argument")
+    if hint is bool:
+        return False
+    if hint is int:
+        return 1
+    if hint is float:
+        return 1.0
+    if hint is str:
+        return "x"
+    if hint is bytes:
+        return b"x"
+    origin = typing.get_origin(hint)
+    if origin is typing.Union or (UnionType is not None
+                                  and origin is UnionType):
+        if type(None) in typing.get_args(hint):
+            return None
+        return _synth_value(typing.get_args(hint)[0], depth)
+    import collections.abc as abc
+    if hint is list or origin in (list, abc.Sequence, abc.Iterable):
+        return []
+    if hint is dict or origin in (dict, abc.Mapping):
+        return {}
+    if hint is set or origin in (set, frozenset):
+        return set()
+    if hint is tuple or origin is tuple:
+        return ()
+    if inspect.isclass(hint) and hint.__module__ not in ("builtins", "typing"):
+        return _synth_instance(hint, depth + 1)
+    raise ValueError(f"cannot synthesize a value for {hint!r}")
 
 
 def _describe_function(fid, fn):
@@ -254,15 +311,15 @@ def do_discover(req):
             if cls.__module__ != mod.__name__ or cname.startswith("_"):
                 continue
             cfid = f"{os.path.abspath(path)}::{cls.__qualname__}"
-            if not _zero_arg_constructible(cls):
+            if not _constructible(cls):
                 if not only:
                     functions.append({
                         "fid": cfid, "file": path, "line": 0, "params": [],
                         "drivable": False,
-                        "skip_reason": "methods unreachable: no zero-arg "
-                                       "constructor"})
+                        "skip_reason": "methods unreachable: no "
+                                       "synthesizable constructor"})
                 continue
-            inst = cls()
+            inst = _synth_instance(cls)
             for mname, m in inspect.getmembers(inst, callable):
                 if mname.startswith("_") or not (
                         inspect.ismethod(m) or inspect.isfunction(m)):
@@ -298,7 +355,7 @@ def _callable_for(fid):
     fn = _resolve(fid)
     if isinstance(fn, tuple):
         _, cls, name = fn
-        return getattr(cls(), name)
+        return getattr(_synth_instance(cls), name)
     return fn
 
 
@@ -325,7 +382,7 @@ def materialize(spec):
         obj = importlib.import_module(modname)
         for part in qual.split("."):
             obj = getattr(obj, part)
-        return obj()
+        return _synth_instance(obj)
     if tag == "list_int":
         if shape == "all_equal":
             return [7] * size

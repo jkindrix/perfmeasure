@@ -102,8 +102,21 @@ def test_receiver_methods_on_constructible_types():
     # consuming / &mut receivers stay out, with reasons
     assert "not repeatable" in fns["consume"]["skip_reason"]
     assert "not repeatable" in fns["tweak"]["skip_reason"]
-    # no zero-arg constructor
-    assert "no zero-arg constructor" in fns["method"]["skip_reason"]
+    # no synthesizable constructor (pub field only, no new())
+    assert "no synthesizable constructor" in fns["method"]["skip_reason"]
+
+
+def test_ctor_arg_synthesis():
+    fns = _by_name()
+    # new(cap: usize, tag: String) -> Self
+    idx = fns["lookup_all"]
+    assert idx["drivable"] is True
+    assert idx["receiver"] == 'tiny_crate::Index::new(1, "x".to_string())'
+    # new(&Opts, Option<usize>) -> Result<Self, _>: recursion + unwrap
+    ld = fns["count_strict"]
+    assert ld["drivable"] is True
+    assert ld["receiver"] == \
+        "tiny_crate::Loader::new(&tiny_crate::Opts::new(), None).unwrap()"
 
 
 def test_constructible_struct_params():

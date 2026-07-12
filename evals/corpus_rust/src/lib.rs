@@ -176,6 +176,21 @@ impl RsOpts {
     }
 }
 
+pub struct RsIndex {
+    modulus: i64,
+}
+
+impl RsIndex {
+    pub fn new(modulus: i64, label: String) -> Self {
+        let _ = label;
+        RsIndex { modulus: modulus + 1 }
+    }
+
+    pub fn rs_count_multiples(&self, xs: &[i64]) -> usize {
+        xs.iter().filter(|x| **x % self.modulus == 0).count()
+    }
+}
+
 pub fn rs_apply_opts(xs: &[i64], opts: &RsOpts) -> i64 {
     if opts.strict {
         xs.len() as i64

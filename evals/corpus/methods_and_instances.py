@@ -19,8 +19,20 @@ class Accumulator:
 
 
 class NeedsArgs:
-    def __init__(self, path: str):
+    def __init__(self, path: str, retries: int):
         self.path = path
+        self.retries = retries
+
+    def scan_all(self, xs: list[int]) -> int:
+        acc = self.retries
+        for x in xs:
+            acc += x
+        return acc
+
+
+class Unbuildable:
+    def __init__(self, conn):
+        self.conn = conn
 
     def work(self, xs: list[int]) -> int:
         return len(xs)
