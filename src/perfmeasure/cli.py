@@ -79,18 +79,31 @@ def main(argv: list[str] | None = None) -> int:
     fn = sub.add_parser("fn", help="measure a function (FILE.py::qualname) "
                                    "or all drivable functions in FILE.py")
     fn.add_argument("target")
-    fn.add_argument("--json", action="store_true")
-    fn.add_argument("--verbose", action="store_true")
     fn.add_argument("--budget", type=float, default=30.0,
                     help="wall-clock seconds per function (default 30)")
-    fn.add_argument("--python", help="target project's interpreter")
+    scan_p = sub.add_parser("scan", help="measure every function under DIR")
+    scan_p.add_argument("target")
+    scan_p.add_argument("--budget", type=float, default=10.0,
+                        help="wall-clock seconds per function (default 10)")
+    scan_p.add_argument("--exclude", action="append", default=[],
+                        help="glob/substring to skip (repeatable)")
+    for p in (fn, scan_p):
+        p.add_argument("--json", action="store_true")
+        p.add_argument("--verbose", action="store_true")
+        p.add_argument("--python", help="target project's interpreter")
     args = parser.parse_args(argv)
 
-    file, _, qualname = args.target.partition("::")
     budget = Budget(per_function_s=args.budget)
     try:
-        reports, interp = measure_target(file, qualname or None, budget,
-                                         python=args.python)
+        if args.command == "fn":
+            file, _, qualname = args.target.partition("::")
+            reports, interp = measure_target(file, qualname or None, budget,
+                                             python=args.python)
+            summary = None
+        else:
+            reports, interp, summary = scan_target(
+                args.target, budget, python=args.python,
+                exclude=args.exclude)
     except (RuntimeError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
@@ -99,7 +112,30 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"# interpreter: {interp}")
         print(render_human(reports, verbose=args.verbose))
+        if summary is not None:
+            from perfmeasure.core.scan import render_summary
+            print(render_summary(summary))
     return 0
+
+
+def scan_target(target: str, budget: Budget, python: str | None = None,
+                exclude: list[str] | None = None):
+    from perfmeasure.core.scan import collect_files, scan
+    root = Path(target).resolve()
+    plugin = PythonPlugin(python=python)
+    interpreter, how = plugin.resolve_interpreter(root)
+    files = collect_files([str(root)], plugin.extensions, exclude)
+    if not files:
+        raise RuntimeError(f"no Python files under {target}")
+    session = RunnerSession(plugin.runner_command(root))
+    try:
+        reports, summary = scan(
+            session, files, budget,
+            progress=lambda fid: print(f"  measuring {fid.rpartition('/')[2]}",
+                                       file=sys.stderr))
+    finally:
+        session.close()
+    return reports, f"{interpreter} (via {how})", summary
 
 
 if __name__ == "__main__":

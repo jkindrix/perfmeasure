@@ -192,8 +192,14 @@ def do_discover(req):
                 "skip_reason": "import_failed: "
                                + traceback.format_exc(limit=3).strip()[-500:]})
             continue
-        for name, fn in inspect.getmembers(mod, inspect.isfunction):
-            if fn.__module__ != mod.__name__ or name.startswith("_"):
+        def _measurable(obj):
+            return inspect.isfunction(obj) or (
+                callable(obj)                       # e.g. lru_cache wrappers
+                and inspect.isfunction(getattr(obj, "__wrapped__", None)))
+
+        for name, fn in inspect.getmembers(mod, _measurable):
+            if getattr(fn, "__module__", None) != mod.__name__ \
+                    or name.startswith("_"):
                 continue
             fid = f"{os.path.abspath(path)}::{fn.__qualname__}"
             if only and fid != only:
@@ -295,6 +301,60 @@ def materialize(spec):
 
 # --- measurement ------------------------------------------------------------------
 
+def _materialize_all(specs):
+    """Two passes: symbolic int_half_of specs need the other args first."""
+    args = [None] * len(specs)
+    for i, s in enumerate(specs):
+        if s["spec_type"] != "int_half_of":
+            args[i] = materialize(s)
+    for i, s in enumerate(specs):
+        if s["spec_type"] == "int_half_of":
+            ref = args[s["of_index"]]
+            args[i] = (len(ref) if hasattr(ref, "__len__") else int(ref)) // 2
+    return args
+
+
+def _fingerprint(obj):
+    """Cheap structural fingerprint to detect in-place mutation. Sampled,
+    not exhaustive — reorderings and growth are what we care about."""
+    if isinstance(obj, (str, bytes, int, float, bool, type(None))):
+        return None                       # immutable
+    if isinstance(obj, list):
+        k = len(obj)
+        idx = range(0, k, max(1, k // 16))
+        return ("list", k, tuple(repr(obj[i])[:24] for i in idx))
+    if isinstance(obj, dict):
+        items = list(obj.items())[:8]
+        return ("dict", len(obj), tuple(repr(i)[:32] for i in items))
+    if isinstance(obj, (set, frozenset)):
+        return ("set", len(obj))
+    return ("opaque", id(obj))
+
+
+def _deepsize(obj, depth=0):
+    """Sampled recursive getsizeof of a return value (blind-spot check)."""
+    size = sys.getsizeof(obj, 0)
+    if depth >= 3:
+        return size
+    if isinstance(obj, (list, tuple)):
+        sample = obj[:64]
+        if sample:
+            size += len(obj) * sum(_deepsize(x, depth + 1)
+                                   for x in sample) // len(sample)
+    elif isinstance(obj, dict):
+        sample = list(obj.items())[:64]
+        if sample:
+            per = sum(_deepsize(k, depth + 1) + _deepsize(v, depth + 1)
+                      for k, v in sample) // len(sample)
+            size += len(obj) * per
+    elif isinstance(obj, (set, frozenset)):
+        sample = list(obj)[:64]
+        if sample:
+            size += len(obj) * sum(_deepsize(x, depth + 1)
+                                   for x in sample) // len(sample)
+    return size
+
+
 def do_call(req):
     started = time.perf_counter()
     fid = req["fid"]
@@ -303,8 +363,9 @@ def do_call(req):
     except BaseException:
         return error(req["id"], fid, "not_found",
                      traceback.format_exc(limit=2).strip()[-300:])
+    specs = req["inputs"]
     try:
-        args = [materialize(s) for s in req["inputs"]]
+        args = _materialize_all(specs)
     except Exception:
         return error(req["id"], fid, "unsupported_input",
                      traceback.format_exc(limit=2).strip()[-300:])
@@ -312,9 +373,23 @@ def do_call(req):
     measure = req.get("measure", ["time"])
     budget_s = req.get("budget_ms", 10_000) / 1000.0
     notes = []
+    mutates = False
     try:
-        for _ in range(req.get("warmup", 1)):
+        before = [_fingerprint(a) for a in args]
+        warmup_seconds = None
+        for i in range(req.get("warmup", 1)):
+            w0 = time.perf_counter_ns()
             fn(*args)
+            w1 = time.perf_counter_ns()
+            if i == 0:
+                # the first-ever call is the only honest measurement of a
+                # memoizing function; the core compares it to later reps
+                warmup_seconds = (w1 - w0) / 1e9
+        mutates = any(b is not None and _fingerprint(a) != b
+                      for a, b in zip(args, before))
+        if mutates:
+            notes.append("mutates_input")
+            args = _materialize_all(specs)   # warmup dirtied them
 
         timings, batched = [], False
         if "time" in measure:
@@ -327,7 +402,7 @@ def do_call(req):
                 del r
                 first = (t1 - t0) / 1e9
                 batch = 1
-                if first < BATCH_THRESHOLD_S:
+                if first < BATCH_THRESHOLD_S and not mutates:
                     batch = min(10_000, max(1, int(BATCH_TARGET_S / max(first, 1e-9))))
                     batched = True
                 timings.append(first if batch == 1 else _timed_batch(fn, args, batch))
@@ -338,14 +413,18 @@ def do_call(req):
                     if time.perf_counter() - started > budget_s:
                         notes.append("budget")
                         break
+                    if mutates:
+                        args = _materialize_all(specs)  # untimed
                     t = _timed_batch(fn, args, batch)
                     timings.append(t)
                     total += t * batch
             finally:
                 gc.enable()
 
-        peak = None
+        peak = ret_deepsize = None
         if "memory" in measure:
+            if mutates:
+                args = _materialize_all(specs)
             gc.collect()
             tracemalloc.start()
             try:
@@ -353,16 +432,22 @@ def do_call(req):
                 tracemalloc.reset_peak()
                 r = fn(*args)
                 peak = max(0, tracemalloc.get_traced_memory()[1] - base)
-                del r
             finally:
                 tracemalloc.stop()
+            try:
+                ret_deepsize = _deepsize(r)
+            except Exception:
+                ret_deepsize = None
+            del r
     except BaseException:
         gc.enable()
         return error(req["id"], fid, "exception",
                      traceback.format_exc(limit=5).strip()[-800:])
     return {"op": "result", "id": req["id"], "fid": fid,
             "wall_seconds": timings, "batched": batched,
-            "peak_alloc_bytes": peak, "repeats_done": len(timings),
+            "warmup_seconds": warmup_seconds,
+            "peak_alloc_bytes": peak, "ret_deepsize": ret_deepsize,
+            "mutates": mutates, "repeats_done": len(timings),
             "notes": notes}
 
 

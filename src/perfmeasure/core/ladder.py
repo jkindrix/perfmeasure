@@ -18,7 +18,9 @@ from dataclasses import dataclass, field
 
 N0_COLLECTION = 4
 N0_INT = 2
-N_MAX = 2 ** 22
+N_MAX = 2 ** 22          # collections: memory-bounded
+INT_N_MAX = 2 ** 62      # int magnitude costs no memory; log-class
+                         # functions need the span (digits, halvings)
 MIN_POINTS_TARGET = 5
 
 
@@ -35,6 +37,7 @@ class ShapeLadder:
     n0: int
     budget_s: float
     per_call_soft_s: float
+    n_max: int = N_MAX
     sizes_done: list[int] = field(default_factory=list)
     times: dict[int, float] = field(default_factory=dict)
     spent_s: float = 0.0
@@ -77,7 +80,7 @@ class ShapeLadder:
         if not self._backfilling:
             if last_t > self.per_call_soft_s:
                 self.stop_reason = "per_call_cap"
-            elif last * 2 > N_MAX:
+            elif last * 2 > self.n_max:
                 self.stop_reason = "n_max"
             elif last_t * 4 > self.budget_s - self.spent_s:
                 self.stop_reason = "projected_cost"

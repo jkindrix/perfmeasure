@@ -69,10 +69,14 @@ class GenSpec:
     shape: str
     size: int
     seed: int
+    of_index: int | None = None    # int_half_of: which arg's size to halve
 
     def wire(self) -> dict[str, Any]:
-        return {"spec_type": self.type_tag, "shape": self.shape,
-                "size": self.size, "seed": self.seed}
+        msg = {"spec_type": self.type_tag, "shape": self.shape,
+               "size": self.size, "seed": self.seed}
+        if self.of_index is not None:
+            msg["of_index"] = self.of_index
+        return msg
 
 
 # --- function descriptors (from runner discovery) ----------------------------
@@ -112,6 +116,9 @@ class Point:
     reps: int
     peak_bytes: int | None = None
     batched: bool = False      # sub-resolution call timed in a batch loop
+    first_seconds: float = 0.0  # first rep
+    warmup_seconds: float | None = None  # first-ever call — honest for memoizers
+    ret_deepsize: int | None = None  # sampled deep-size of the return value
 
 
 @dataclass

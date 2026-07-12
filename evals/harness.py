@@ -26,7 +26,7 @@ from perfmeasure.core.ladder import Budget                     # noqa: E402
 from perfmeasure.core.report import render_human               # noqa: E402
 from perfmeasure.cli import measure_target                     # noqa: E402
 
-CORPUS = Path(__file__).parent / "corpus" / "typed_basics.py"
+CORPUS_FILES = sorted((Path(__file__).parent / "corpus").glob("*.py"))
 EXPECTED = json.loads((Path(__file__).parent / "expected.json").read_text())
 
 
@@ -38,8 +38,16 @@ def main() -> int:
     args = parser.parse_args()
 
     t0 = time.time()
-    reports, interp = measure_target(
-        str(CORPUS), args.only, Budget(per_function_s=args.budget))
+    reports, interp = [], "?"
+    for corpus in CORPUS_FILES:
+        try:
+            rs, interp = measure_target(
+                str(corpus), args.only, Budget(per_function_s=args.budget))
+        except RuntimeError as e:
+            if args.only and "not found" in str(e):
+                continue
+            raise
+        reports.extend(rs)
     print(f"# interpreter: {interp}")
     by_name = {r.fid.rpartition("::")[2]: r for r in reports}
 
@@ -92,6 +100,20 @@ def main() -> int:
             verdicts.append("FAIL")
             failures.append(f"{name}: worst shape must not be "
                             f"{exp['worst_shape_not']}")
+        if exp.get("expect_flag") and not r.flags.get(exp["expect_flag"]):
+            verdicts.append("FAIL")
+            failures.append(f"{name}: flag {exp['expect_flag']} not set "
+                            f"(flags: {r.flags})")
+        for pname, how in exp.get("expect_source", {}).items():
+            if r.type_source.get(pname) != how:
+                verdicts.append("FAIL")
+                failures.append(f"{name}: param {pname} type_source expected "
+                                f"{how}, got {r.type_source.get(pname)}")
+        for pname, val in exp.get("expect_fixed", {}).items():
+            if r.fixed_params.get(pname) != val:
+                verdicts.append("FAIL")
+                failures.append(f"{name}: fixed param {pname} expected "
+                                f"{val!r}, got {r.fixed_params.get(pname)!r}")
         shown = " | ".join(r.time_candidates) if len(r.time_candidates) > 1 \
             else (r.time_cls or r.provenance)
         rows.append((name, shown, r.space_cls or "-",

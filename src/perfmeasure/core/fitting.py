@@ -83,6 +83,15 @@ def fit(points: list[Point], value=lambda p: p.seconds,
     # overhead floor: the cheapest measured call, slightly deflated
     overhead = 0.95 * min(v for _, v in pts)
 
+    # growth must be spread over several points to classify: a flat ladder
+    # with one final spike (allocator artifacts, threshold effects) can't
+    # support any class claim
+    signal_points = sum(1 for _, v in pts if v > 2 * min(v2 for _, v2 in pts))
+    if signal_points < 3:
+        return FitResult(
+            None, [], None,
+            f"growth concentrated in {signal_points} point(s) — cannot classify")
+
     max_n = pts[-1][0]
     scores: list[tuple[float, str]] = []
     for name, fn in CLASSES:

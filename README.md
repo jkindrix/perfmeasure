@@ -9,8 +9,9 @@ guessed, nothing is silently omitted.
 ```sh
 perfmeasure fn path/to/file.py::function     # measure one function
 perfmeasure fn path/to/file.py               # every drivable function in a file
-perfmeasure fn ... --json                    # full records, machine-readable
-perfmeasure fn ... --verbose                 # per-shape ladders and stop reasons
+perfmeasure scan src/                        # whole project + coverage summary
+perfmeasure ... --json                       # full records, machine-readable
+perfmeasure ... --verbose                    # per-shape ladders and stop reasons
 ```
 
 ```
@@ -31,10 +32,20 @@ mod.py::load_config     UNDRIVABLE(unsupported_type: param 'conn' (Connection))
    because random-only measurement hides worst cases (quicksort looks
    O(n log n) on random data). All scalable params grow together; the
    headline class is the **worst across shapes**, with the shape named.
+   Unhinted parameters are **probed** (name heuristics order candidate
+   types; a candidate must survive two live calls) — probed results are
+   labeled `type_source: probed` and capped at medium confidence. Held-fixed
+   int params walk a fallback ladder (1, 0, half-of-driver) before the
+   function is declared undrivable.
 3. **Measure** — wall time (`perf_counter_ns`, GC paused, warmup, min-of-reps,
    sub-microsecond calls batched) and peak Python-heap allocation
    (`tracemalloc`, separate pass so tracing never distorts timing). Hangs
    are killed and recorded as TIMEOUT points; crashes are data, not failures.
+   In-place mutators are detected by input fingerprinting and re-driven on
+   fresh inputs each rep (`mutates_input`); memoized functions are detected
+   by warmup-vs-rep timing and refit on first-call times
+   (`suspected_memoization`); a return value that grows while traced peak
+   stays flat demotes the space answer (`untracked_alloc_suspected`).
 4. **Fit** — `y ~ overhead + b·f(n)` per candidate class
    {1, log n, n, n log n, n², n³, 2ⁿ}, scored by log-space residuals
    (scale-free across decades). Rivals that also explain the data are
@@ -47,10 +58,11 @@ Provenance labels: `MEASURED` | `AMBIGUOUS(candidates)` |
 ## Accuracy
 
 The tool is itself evaluated against a ground-truth corpus of
-known-complexity functions (`python evals/harness.py`). Current starter
-corpus (20 functions, O(1) through O(2ⁿ), plus undrivable-by-design):
-**18/18 time classes correct** (14 exact, 4 ambiguous-containing-truth),
-**8/8 space classes**, **2/2 undrivable precision**.
+known-complexity functions (`python evals/harness.py`): 48 functions,
+O(1) through O(2ⁿ) — typed, unhinted (probing), mutating, memoized,
+cache-bound, and undrivable-by-design. Current numbers:
+**45/45 time classes** (28 exact, rest ambiguous-containing-truth),
+**12/12 space classes**, **2/2 undrivable precision**.
 
 ## Honest limits
 
@@ -64,8 +76,10 @@ corpus (20 functions, O(1) through O(2ⁿ), plus undrivable-by-design):
   honestly read one class high. The eval corpus encodes this.
 - **Space = peak Python-heap allocation.** C-extension allocations
   (numpy buffers, etc.) are invisible to `tracemalloc`.
-- **v1 drives typed parameters only**; unhinted params are
-  `UNDRIVABLE(missing annotation)` for now (probing is next), as are
-  methods, `Callable`s, and custom classes — always with the reason shown.
+- **Probed types are educated guesses.** A function tolerating a
+  `list[int]` doesn't prove the measurement is semantically meaningful;
+  probed results are capped at medium confidence and the generator spec
+  is in the JSON record for audit. Methods, `Callable`s, and custom-class
+  params stay `UNDRIVABLE` — always with the reason shown.
 - Python-only today; the core is language-neutral (abstract input specs
   over a JSON-stdio runner protocol) and a Rust runner is planned.

@@ -20,10 +20,14 @@ from perfmeasure.core.model import (
 from perfmeasure.protocol import seed_for
 
 FIXED_INT_VALUE = 1
+FIXED_VARIANTS = 3      # 0: value 1, 1: value 0, 2: half of the first driver
 
 
-def plan(desc: FunctionDescriptor) -> tuple[DrivePlan | None, str | None]:
-    """Returns (plan, None) or (None, undrivable_reason)."""
+def plan(desc: FunctionDescriptor, fixed_variant: int = 0
+         ) -> tuple[DrivePlan | None, str | None]:
+    """Returns (plan, None) or (None, undrivable_reason). fixed_variant
+    selects the fallback strategy for held-fixed int params — the
+    orchestrator walks variants when the first ladder call is rejected."""
     if not desc.drivable:
         return None, desc.skip_reason or "not drivable"
 
@@ -51,8 +55,15 @@ def plan(desc: FunctionDescriptor) -> tuple[DrivePlan | None, str | None]:
             if s not in shapes:
                 shapes.append(s)
 
-    fixed_params = {p.name: FIXED_INT_VALUE for p in fixed_ints}
     driver_names = [p.name for p in drivers]
+    first_driver_idx = next(i for i, p in enumerate(active) if p in drivers)
+    if fixed_variant == 0:
+        fixed_desc = 1
+    elif fixed_variant == 1:
+        fixed_desc = 0
+    else:
+        fixed_desc = f"half_of:{driver_names[0]}"
+    fixed_params = {p.name: fixed_desc for p in fixed_ints}
 
     def specs(shape: str, size: int) -> list[GenSpec]:
         out = []
@@ -61,8 +72,13 @@ def plan(desc: FunctionDescriptor) -> tuple[DrivePlan | None, str | None]:
                 s = shape if shape in TAG_SHAPES[p.spec_type] else "random"
                 out.append(GenSpec(p.spec_type, s, size,
                                    seed_for(desc.fid, s, size)))
-            else:  # fixed int
-                out.append(GenSpec("int_mag", "magnitude", FIXED_INT_VALUE,
+            elif fixed_variant == 2:
+                spec = GenSpec("int_half_of", "magnitude", 0,
+                               seed_for(desc.fid, "fixed", 0))
+                spec.of_index = first_driver_idx
+                out.append(spec)
+            else:
+                out.append(GenSpec("int_mag", "magnitude", fixed_desc,
                                    seed_for(desc.fid, "fixed", 0)))
         return out
 
