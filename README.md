@@ -15,6 +15,10 @@ perf-lint src/                          # scan
 perf-lint --diff origin/main .          # only findings new since a revision
 perf-lint --adjudicate --llm-model qwen3-coder:30b src/
                                         # LLM-filter noise (local Ollama etc.)
+perf-lint --adjudicate \
+  --llm-command "claude -p --model claude-haiku-4-5-20251001" src/
+                                        # any CLI LLM as backend (prompt on
+                                        # stdin, verdict on stdout)
 perf-lint --json src/                   # machine-readable, stable finding ids
 ```
 
@@ -56,7 +60,16 @@ exclude = ["*/tests/*", "*/benches/*"]
 fail_on = "high"            # high | med | never
 llm_model = "qwen3-coder:30b"
 llm_url = "http://localhost:11434/v1"
+# or a subprocess backend (takes precedence; covered by a Claude
+# subscription, unlike the pay-per-token API):
+# llm_command = "claude -p --model claude-haiku-4-5-20251001"
 ```
+
+Adjudicator backends: `--llm-model`/`--llm-url` speak the OpenAI-compatible
+HTTP API (Ollama, vLLM, and — with `PERF_LINT_LLM_KEY` — the raw Anthropic/
+OpenAI APIs, which bill per token). `--llm-command` runs any CLI LLM instead
+(prompt on stdin, verdict on stdout); `claude -p` is billed under a Claude
+subscription rather than per-token.
 
 Silence a single finding with a comment on or above the line:
 `# perf-lint: ignore` (Python) / `// perf-lint: ignore` (Rust).
