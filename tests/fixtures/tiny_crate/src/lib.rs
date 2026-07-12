@@ -84,6 +84,42 @@ pub fn windows_only(xs: &[i64]) -> i64 {
     xs.len() as i64
 }
 
+pub fn opt_label(xs: &[i64], label: Option<&str>) -> usize {
+    xs.len() + label.map_or(0, str::len)
+}
+
+pub fn sum_u64(values: &[u64]) -> u64 {
+    values.iter().sum()
+}
+
+pub fn find_byte(data: &[u8], needle: u8) -> usize {
+    data.iter().position(|b| *b == needle).unwrap_or(data.len())
+}
+
+pub fn takes_path(path: &std::path::Path) -> bool {
+    path.exists()
+}
+
+pub async fn fetch_all(xs: &[i64]) -> i64 {
+    xs.iter().sum()
+}
+
+pub struct Codec;
+
+impl Codec {
+    pub fn assoc_sum(xs: &[i64]) -> i64 {
+        xs.iter().sum()
+    }
+
+    pub fn with_receiver(&self, xs: &[i64]) -> i64 {
+        xs.len() as i64
+    }
+
+    fn private_helper(xs: &[i64]) -> i64 {
+        xs.len() as i64
+    }
+}
+
 mod private_mod {
     pub fn hidden(xs: &[i64]) -> i64 {
         xs.len() as i64

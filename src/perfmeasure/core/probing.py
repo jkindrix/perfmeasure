@@ -22,9 +22,11 @@ PROBE_SIZES = (4, 16)
 PROBE_TIMEOUT_S = 5.0
 
 _NAME_HINTS = [
-    (re.compile(r"^(n|size|count|num\w*|depth|k|limit)$"), "int_mag"),
+    (re.compile(r"^(n|size|count|num\w*|depth|k|limit|index|idx|i|j|r"
+                r"|start|stop|step|offset)$"), "int_mag"),
     (re.compile(r"^(s|text|word|name|pattern|line)$"), "str_"),
-    (re.compile(r"^(items|arr|xs|ys|data|nums|values|lst|seq|a|b)$"), "list_int"),
+    (re.compile(r"^(items|arr|xs|ys|data|nums|values|lst|seq|iterable"
+                r"|a|b)$"), "list_int"),
     (re.compile(r"^(d|mapping|table|counts)$"), "dict_si"),
 ]
 _DEFAULT_ORDER = ["list_int", "str_", "int_mag", "dict_si", "list_str", "set_int"]
@@ -65,8 +67,12 @@ def probe(session: RunnerSession, desc: FunctionDescriptor
                 break
             last_error = f"candidate {tag} rejected"
         else:
+            others = [p.name for p in unhinted
+                      if p.name != target.name and p.name not in resolved]
+            blame = (f"; co-probed unhinted params {others} may be the "
+                     "real blockers" if others else "")
             return False, (f"rejected: param '{target.name}' accepted no "
-                           f"generated input ({last_error})")
+                           f"generated input ({last_error}){blame}")
     desc.drivable = True
     desc.skip_reason = None
     return True, None

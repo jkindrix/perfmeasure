@@ -25,10 +25,12 @@ def test_python_runner_covers_all_core_tags():
 
 
 def test_rust_whitelist_covers_all_core_tags():
-    rust_tags = {tag for tag, _style in TYPE_WHITELIST.values()}
+    rust_tags = {entry[0] for entry in TYPE_WHITELIST.values()}
     assert set(TAG_SHAPES) <= rust_tags
 
 
 def test_rust_decl_types_cover_whitelisted_tags():
-    rust_tags = {tag for tag, _style in TYPE_WHITELIST.values()}
-    assert rust_tags <= set(DECL_TYPES)
+    # entries with a cast element or style "none" declare their own type
+    plain = {entry[0] for entry in TYPE_WHITELIST.values()
+             if len(entry) < 3 and entry[1] != "none"}
+    assert plain <= set(DECL_TYPES)

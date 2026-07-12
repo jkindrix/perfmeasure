@@ -22,8 +22,8 @@ from perfmeasure.protocol import seed_for
 FIXED_INT_VALUE = 1
 FIXED_VARIANTS = 3      # 0: value 1, 1: value 0, 2: half of the first driver
 # drivable but never scalable; wire value = GenSpec.size
-FIXED_TAGS = {"bool_": 0, "duration_ms": 1}
-FIXED_TAG_DISPLAY = {"bool_": False, "duration_ms": "1ms"}
+FIXED_TAGS = {"bool_": 0, "duration_ms": 1, "opt_none": 0}
+FIXED_TAG_DISPLAY = {"bool_": False, "duration_ms": "1ms", "opt_none": None}
 
 
 def plan(desc: FunctionDescriptor, fixed_variant: int = 0

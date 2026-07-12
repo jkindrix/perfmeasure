@@ -36,6 +36,7 @@ class RunnerSession:
     def _start(self) -> None:
         self._proc = subprocess.Popen(
             self.argv, cwd=self.cwd, text=True, bufsize=1,
+            errors="replace",   # target code may emit raw bytes on stderr
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )

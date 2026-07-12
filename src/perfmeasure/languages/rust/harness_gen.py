@@ -61,6 +61,22 @@ def _arm(fn: dict) -> str:
     exprs: list[str] = []
     for i, p in enumerate(fn["params"]):
         tag, style, rtype = p["spec_type"], p["style"], p["rust_type"]
+        cast = p.get("cast")
+        if style == "none":                  # Option<T>: None type-infers
+            exprs.append("None")
+            continue
+        if cast:                             # other-width int/float slices
+            base_gen = "shaped_i64" if tag == "list_int" else "gen_list_f64"
+            lines.append(
+                f"            let a{i}: Vec<{cast}> = "
+                f"{base_gen}(&req.inputs[{i}]).into_iter()"
+                f".map(|v| v as {cast}).collect();")
+            if style == "own":
+                exprs.append(f"__p.{len(own)}")
+                own.append(i)
+            else:
+                exprs.append(f"&a{i}[..]")
+            continue
         if tag == "int_mag":
             lines.append(
                 f'            let a{i}: i64 = '

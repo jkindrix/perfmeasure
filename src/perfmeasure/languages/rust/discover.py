@@ -18,9 +18,12 @@ from tree_sitter import Language, Parser
 
 RUST = Language(tree_sitter_rust.language())
 
-# normalized type string -> (spec tag, passing style)
+# normalized type string -> (spec tag, passing style[, cast element type])
 # style: "borrow_slice" &v[..] | "borrow" &v | "own" clone per call | "copy"
-TYPE_WHITELIST: dict[str, tuple[str, str]] = {
+#        | "borrow_str_slice" &[&str] view | "none" Option params get None
+# 3rd element: integer/float slices of other widths are generated as the
+# base type and cast element-wise in the arm (untimed)
+TYPE_WHITELIST: dict[str, tuple] = {
     "&[i64]": ("list_int", "borrow_slice"),
     "&Vec<i64>": ("list_int", "borrow"),
     "Vec<i64>": ("list_int", "own"),
@@ -47,6 +50,17 @@ TYPE_WHITELIST: dict[str, tuple[str, str]] = {
     "i64": ("int_mag", "copy"),
     "u32": ("int_mag", "copy"),
     "i32": ("int_mag", "copy"),
+    "u16": ("int_mag", "copy"),
+    "i16": ("int_mag", "copy"),
+    "u8": ("int_mag", "copy"),
+    "i8": ("int_mag", "copy"),
+    "&[u64]": ("list_int", "borrow_slice", "u64"),
+    "Vec<u64>": ("list_int", "own", "u64"),
+    "&[u32]": ("list_int", "borrow_slice", "u32"),
+    "Vec<u32>": ("list_int", "own", "u32"),
+    "&[usize]": ("list_int", "borrow_slice", "usize"),
+    "&[f32]": ("list_float", "borrow_slice", "f32"),
+    "Vec<f32>": ("list_float", "own", "f32"),
     "&HashMap<i64,i64>": ("dict_si", "borrow"),
     "HashMap<i64,i64>": ("dict_si", "own"),
 }
@@ -65,6 +79,7 @@ def _normalize(type_text: str) -> str:
     t = re.sub(r"\s+", "", type_text)
     t = t.replace("&'_", "&").replace("std::collections::", "")
     t = t.replace("std::time::", "").replace("core::time::", "")
+    t = t.replace("std::path::", "")
     t = re.sub(r"&'[a-zA-Z_]\w*", "&", t)   # one named input lifetime is fine
     return t
 
@@ -150,6 +165,33 @@ def _walk(node, path, crate, mod_path, src_root, out, module_pub):
                 entry.update(drivable=False, params=[],
                              skip_reason=f"cfg_inactive: {inactive}")
             out.append(entry)
+        elif child.type == "impl_item":
+            # inherent impls only: associated fns are callable as Type::fn;
+            # trait impls and generic impls stay out (semantic-model trap)
+            if child.child_by_field_name("trait") is not None \
+                    or child.child_by_field_name("type_parameters") is not None:
+                continue
+            tnode = child.child_by_field_name("type")
+            body = child.child_by_field_name("body")
+            if tnode is None or tnode.type != "type_identifier" or body is None:
+                continue
+            impl_path = mod_path + [tnode.text.decode()]
+            impl_attrs = []
+            for member in body.children:
+                if member.type == "attribute_item":
+                    impl_attrs.append(member)
+                    continue
+                mattrs, impl_attrs = impl_attrs, []
+                if member.type != "function_item":
+                    continue
+                entry = _describe(member, path, crate, impl_path, module_pub)
+                if entry is None:
+                    continue
+                inactive = _cfg_inactive(mattrs)
+                if inactive:
+                    entry.update(drivable=False, params=[],
+                                 skip_reason=f"cfg_inactive: {inactive}")
+                out.append(entry)
         elif child.type == "mod_item":
             if _cfg_test(attrs):        # #[cfg(test)] mod: never reachable
                 continue
@@ -193,6 +235,11 @@ def _describe(node, path, crate, mod_path, module_pub) -> dict | None:
     # entirely, matching the Python runner's policy for _-prefixed names
     if not _is_pub(node) or not module_pub:
         return None
+    if any(c.type == "function_modifiers" and b"async" in c.text
+           for c in node.children):
+        # calling an async fn only constructs the future; timing that
+        # would be a silent lie about the actual work
+        return skip("async fn (harness does not execute futures)")
     if node.child_by_field_name("type_parameters") is not None:
         return skip("generic")
 
@@ -200,7 +247,7 @@ def _describe(node, path, crate, mod_path, module_pub) -> dict | None:
     plist = node.child_by_field_name("parameters")
     for p in plist.children if plist else []:
         if p.type == "self_parameter":
-            return skip("method (self)")
+            return skip("method (self receiver; needs a constructed instance)")
         if p.type != "parameter":
             continue
         pname_node = p.child_by_field_name("pattern")
@@ -213,11 +260,19 @@ def _describe(node, path, crate, mod_path, module_pub) -> dict | None:
             return skip(f"param '{pname_node.text.decode()}': &mut")
         norm = _normalize(raw)
         entry = TYPE_WHITELIST.get(norm)
+        if entry is None and norm.startswith("Option<"):
+            entry = ("opt_none", "none")     # None type-infers at any call site
+        detail = ""
+        if entry is None:
+            detail = (f"filesystem path (I/O domain, not generated)"
+                      if norm in ("&Path", "PathBuf", "&PathBuf")
+                      else f"unsupported type {raw!r}")
         pinfo = {"name": pname_node.text.decode(),
                  "spec_type": entry[0] if entry else None,
                  "omitted": False,
-                 "detail": "" if entry else f"unsupported type {raw!r}",
+                 "detail": detail,
                  "style": entry[1] if entry else None,
+                 "cast": entry[2] if entry and len(entry) > 2 else None,
                  "rust_type": norm}
         params.append(pinfo)
     undrivable = [p for p in params if p["spec_type"] is None]

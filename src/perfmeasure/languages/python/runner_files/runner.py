@@ -18,6 +18,7 @@ import importlib.util
 import inspect
 import json
 import os
+import pathlib
 import platform
 import random
 import string
@@ -102,6 +103,9 @@ def _map_hint(hint) -> tuple[str | None, str]:
         return None, "missing annotation"
     if hint is bool:                      # before int: bool subclasses int
         return "bool_", ""                # drivable, held fixed — never scaled
+    if isinstance(hint, type) and issubclass(hint, (pathlib.PurePath, os.PathLike)):
+        # the biggest cross-project bucket: honest label, not "unsupported"
+        return None, "filesystem path (I/O domain, not generated)"
     if hint is int:
         return "int_mag", ""
     if hint is str:
@@ -155,7 +159,15 @@ def _describe_function(fid, fn):
     except Exception:
         hints = getattr(fn, "__annotations__", {}) or {}
     params, drivable, reason = [], True, None
-    for p in sig.parameters.values():
+    plist = list(sig.parameters.values())
+    if plist and plist[0].name in ("self", "cls") \
+            and plist[0].annotation is plist[0].empty:
+        # an unbound method pasted as a free function: probing it with
+        # generated 'self' values would only measure garbage
+        return {"fid": fid, "file": base_file(fn), "line": base_line(fn),
+                "params": [], "drivable": False,
+                "skip_reason": "unbound method (self/cls parameter)"}
+    for p in plist:
         if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
             drivable, reason = False, f"*{p.name}"
             params.append({"name": p.name, "spec_type": None,
@@ -171,13 +183,22 @@ def _describe_function(fid, fn):
         if tag is None:
             drivable = False
             reason = reason or f"param '{p.name}': {detail}"
+    return {"fid": fid, "file": base_file(fn), "line": base_line(fn),
+            "params": params, "drivable": drivable, "skip_reason": reason}
+
+
+def base_file(fn):
     try:
-        line = fn.__code__.co_firstlineno
-        file = fn.__code__.co_filename
+        return fn.__code__.co_filename
     except AttributeError:
-        line, file = 0, ""
-    return {"fid": fid, "file": file, "line": line, "params": params,
-            "drivable": drivable, "skip_reason": reason}
+        return ""
+
+
+def base_line(fn):
+    try:
+        return fn.__code__.co_firstlineno
+    except AttributeError:
+        return 0
 
 
 def do_discover(req):

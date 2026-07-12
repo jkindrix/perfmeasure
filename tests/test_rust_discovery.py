@@ -56,3 +56,37 @@ def test_new_whitelist_entries():
     assert fns["join_parts"]["params"][0]["style"] == "borrow_str_slice"
     assert fns["mean"]["params"][0]["spec_type"] == "list_float"
     assert fns["capped_sum"]["params"][1]["spec_type"] == "duration_ms"
+
+
+def test_option_params_get_none():
+    p = _by_name()["opt_label"]["params"][1]
+    assert p["spec_type"] == "opt_none" and p["style"] == "none"
+
+
+def test_int_width_variants():
+    fns = _by_name()
+    u64p = fns["sum_u64"]["params"][0]
+    assert u64p["spec_type"] == "list_int" and u64p["cast"] == "u64"
+    assert fns["find_byte"]["params"][1]["spec_type"] == "int_mag"
+
+
+def test_path_params_get_honest_label():
+    f = _by_name()["takes_path"]
+    assert f["drivable"] is False
+    assert "filesystem path" in f["skip_reason"]
+
+
+def test_async_fns_are_skipped_honestly():
+    f = _by_name()["fetch_all"]
+    assert f["drivable"] is False
+    assert "async" in f["skip_reason"]
+
+
+def test_impl_associated_fns_are_discovered():
+    fns = _by_name()
+    assoc = fns["assoc_sum"]
+    assert assoc["fid"] == "tiny_crate::Codec::assoc_sum"
+    assert assoc["drivable"] is True
+    assert fns["with_receiver"]["drivable"] is False
+    assert "self receiver" in fns["with_receiver"]["skip_reason"]
+    assert "private_helper" not in fns

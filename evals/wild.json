@@ -1,5 +1,7 @@
 [
   {"path": "~/rust-expect/crates/rust-expect", "features": ["full"]},
   {"path": "~/rust-expect/crates/rust-pty"},
+  {"path": "~/claude-snatch"},
+  {"path": "~/rust-mssql-driver/crates/mssql-codec"},
   {"path": "src/perfmeasure"}
 ]

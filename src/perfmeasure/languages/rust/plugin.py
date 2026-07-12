@@ -14,8 +14,21 @@ from perfmeasure.languages.rust.harness_gen import build_harness
 def find_crate_root(path: Path) -> Path:
     p = path.resolve()
     for d in ([p] if p.is_dir() else []) + list(p.parents):
-        if (d / "Cargo.toml").exists():
+        manifest = d / "Cargo.toml"
+        if not manifest.exists():
+            continue
+        if "[package]" in manifest.read_text():
             return d
+        # virtual workspace manifest: descend to the library member
+        libs = sorted({m.parent for pat in ("*/Cargo.toml", "*/*/Cargo.toml")
+                       for m in d.glob(pat)
+                       if (m.parent / "src" / "lib.rs").exists()
+                       and "[package]" in m.read_text()})
+        if len(libs) == 1:
+            return libs[0]
+        raise RuntimeError(
+            f"{manifest} is a virtual workspace manifest; point at one "
+            "library member: " + ", ".join(str(x) for x in libs))
     raise RuntimeError(f"no Cargo.toml above {path}")
 
 
