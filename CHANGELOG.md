@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.7.0 (2026-07-13)
+
+Burn-down from an independent external audit (different reviewer, every
+finding re-verified and reproduced here before acting). BREAKING:
+Python fids and therefore baselines and input seeds change — regenerate
+baselines with `scan --json` (an old baseline now fails the diff gate
+loudly instead of comparing nothing and passing).
+
+- **Portable function ids** (the audit's top finding, reproduced: a
+  baseline diffed from a moved checkout compared ZERO functions and
+  exited 0). Python fids are now target-root-relative instead of
+  absolute (`tests/fixtures/mod.py::fn`); the absolute path stays in
+  `file` for diagnostics. Input seeds derive from fids, so generated
+  inputs are now also reproducible across checkouts — GENERATOR_REV 4.
+- **Diff gate integrity**: a baseline that matches nothing fails with a
+  regenerate hint (zero comparisons must never read as green — same
+  policy as the wild gate); continuity losses (vanished /
+  no-longer-measured functions) are their own category, warning by
+  default and failing under `--strict` (borderline ladders flip with
+  machine timing; a default-fail would flap); a baseline measured under
+  a different `generator_rev` is prominently called out.
+- **Mutation fingerprints see content, not just shape** (reproduced: a
+  same-length set churner drew no `mutates_input` and re-timed dirtied
+  state). Set fingerprints sample content; dict fingerprints sample a
+  spread instead of the first items (the same hole, unflagged by the
+  audit, one key past the sampled head). Pinned by corpus fixtures
+  (`set_churn`, `dict_value_churn`) and unit tests.
+- **Rust harness honesty**: `warmup: 0` now truly runs no warmup
+  (probing and lean rescue calls were silently warmed and budget-taxed;
+  `warmup_seconds` reports null like Python); owned `Option<T>` values
+  ride the per-call prep tuple instead of being moved by the first call
+  (an `Option<String>` param used to kill the whole harness compile —
+  pinned by `rs_opt_string_tag`); undrivable records no longer claim
+  `tracemalloc` on Rust targets (`allocator` defaults to "unknown"
+  until a runner declares itself).
+- **Release-profile mirroring on Python 3.10**: `tomli` backfills
+  `tomllib`, so the README's mirroring claim holds on every supported
+  interpreter.
+- **Prior art**: adds bigocheck (Python, time+space, case analysis,
+  JSON regression baselines, single-named-function scope; verified on
+  PyPI).
+
 ## 0.6.1 (2026-07-12)
 
 - **Python 3.9 targets actually work now.** On 3.9/3.10,

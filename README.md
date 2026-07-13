@@ -112,7 +112,7 @@ and Rust, O(1) through O(2ⁿ) — typed, unhinted (probing), mutating,
 memoized, cache-bound, panicking, methods, constructed instances, and
 undrivable-by-design.
 <!-- gate:begin (written by `python evals/harness.py --update-readme`; do not edit) -->
-Current run: **93/93 time classes** (82 exact, rest ambiguous-containing-truth, mean ambiguity width 1.62), **29/29 space classes**, **10/10 undrivable recall** — full gate in ~180 s.
+Current run: **96/96 time classes** (84 exact, rest ambiguous-containing-truth, mean ambiguity width 1.65), **30/30 space classes**, **10/10 undrivable recall** — full gate in ~186 s.
 <!-- gate:end -->
 One honest caveat: the fitter's thresholds are calibrated against this
 same corpus, so the gate measures fit-to-corpus plus regression teeth,
@@ -225,6 +225,9 @@ time and space classes — built to benchmark LLMs on
 competitive-programming tasks, not to point at your codebase),
 [zertyz/big-O](https://github.com/zertyz/big-O) (Rust, time+space via a
 counting allocator, asserted inside hand-written `big-o-test` tests),
+[bigocheck](https://pypi.org/project/bigocheck/) (Python, time+space
+with sorted/reversed/random case analysis and JSON regression
+baselines — pointed at one named function at a time),
 and Google Benchmark's `.Complexity()` (C++, time only) all fit classes
 to measurements. What none of them offer, and perfmeasure does, is the
 combination: **discovery** (point it at a file, crate, or tree — no
