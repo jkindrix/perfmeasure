@@ -309,7 +309,7 @@ const BATCH_TARGET_S: f64 = 200e-6;
 
 struct Out {
     wall_seconds: Vec<f64>,
-    warmup_seconds: f64,
+    warmup_seconds: Option<f64>,
     batched: bool,
     peak_alloc_bytes: Option<u64>,
     notes: Vec<String>,
@@ -325,7 +325,7 @@ fn run_measured<A, P: FnMut() -> A, F: FnMut(A)>(
     let budget_s = req.budget_ms as f64 / 1000.0;
     let mut out = Out {
         wall_seconds: vec![],
-        warmup_seconds: 0.0,
+        warmup_seconds: None,
         batched: false,
         peak_alloc_bytes: None,
         notes: vec![],
@@ -334,20 +334,24 @@ fn run_measured<A, P: FnMut() -> A, F: FnMut(A)>(
     // For borrow-style arms (prep allocates nothing) the net heap the
     // warmup call RETAINS is also recorded: interior-mutability caches
     // (RefCell/OnceCell memoization) populate here, and later reps then
-    // measure the cached path — a timing-only signal misses mild caches
-    let cur0 = CURRENT.load(Ordering::Relaxed);
-    let a = prep();
-    let w = Instant::now();
-    call(a);
-    out.warmup_seconds = w.elapsed().as_secs_f64();
-    if !owns {
-        let retained = CURRENT.load(Ordering::Relaxed) as i64 - cur0 as i64;
-        if retained > 4096 {
-            out.notes.push(format!("retained_bytes:{}", retained));
+    // measure the cached path — a timing-only signal misses mild caches.
+    // warmup == 0 (probing, lean rescue calls) is a promise: no warmup
+    // runs at all, and warmup_seconds reports null, as in Python.
+    if req.warmup > 0 {
+        let cur0 = CURRENT.load(Ordering::Relaxed);
+        let a = prep();
+        let w = Instant::now();
+        call(a);
+        out.warmup_seconds = Some(w.elapsed().as_secs_f64());
+        if !owns {
+            let retained = CURRENT.load(Ordering::Relaxed) as i64 - cur0 as i64;
+            if retained > 4096 {
+                out.notes.push(format!("retained_bytes:{}", retained));
+            }
         }
-    }
-    for _ in 1..req.warmup {
-        call(prep());
+        for _ in 1..req.warmup {
+            call(prep());
+        }
     }
 
     let measure_time = req.measure.is_empty()

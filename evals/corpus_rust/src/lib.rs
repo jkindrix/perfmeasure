@@ -263,3 +263,11 @@ pub fn rs_generic<T: Ord>(xs: Vec<T>) -> Vec<T> {
 pub fn rs_feature_gated(xs: &[i64]) -> i64 {
     xs.len() as i64
 }
+
+// Option with an OWNED inner type: the generated harness used to build the
+// option once and let the first call move it — compile failure, function
+// dropped. Owned options now ride the prep tuple, built fresh per call.
+pub fn rs_opt_string_tag(xs: &[i64], tag: Option<String>) -> i64 {
+    let bonus = tag.map(|s| s.len() as i64).unwrap_or(0);
+    xs.iter().sum::<i64>() + bonus
+}

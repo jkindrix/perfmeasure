@@ -11,10 +11,11 @@ import platform
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-TOOL_VERSION = "0.6.1"
+TOOL_VERSION = "0.7.0"
 # bumped whenever generator streams or the measurement schedule change:
 # a JSON record is only input-reproducible against the same generator_rev
-GENERATOR_REV = 3   # rev 3: rep tiers, in-window budget clamp, wall gate
+GENERATOR_REV = 4   # rev 4: portable fids reseed all inputs (seeds derive
+                    # from fids); Rust warmup=0 now truly runs no warmup
 
 # --- complexity classes, ordered by growth ---------------------------------
 
@@ -192,7 +193,9 @@ class FunctionReport:
     max_n_reached: int = 0
     flags: dict[str, Any] = field(default_factory=dict)
     environment: dict[str, str] = field(default_factory=dict)
-    allocator: str = "tracemalloc"   # runner's declared memory semantics
+    allocator: str = "unknown"   # runner's declared memory semantics; set
+                                 # from the runner hello — stays "unknown"
+                                 # on early returns that never spoke to one
 
     def to_json(self) -> dict[str, Any]:
         return {

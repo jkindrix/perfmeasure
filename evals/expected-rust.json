@@ -54,6 +54,12 @@
     ],
     "note": "cache-bound random probes"
   },
+  "rs_opt_string_tag": {
+    "time": "O(n)",
+    "time_any": ["O(n)", "O(n log n)"],
+    "space": "O(1)",
+    "note": "owned-inner Option: pins the per-call prep-tuple construction"
+  },
   "rs_sort_copy": {
     "time": "O(n log n)",
     "space": "O(n)",

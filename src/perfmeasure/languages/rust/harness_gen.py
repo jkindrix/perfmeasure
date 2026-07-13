@@ -74,8 +74,11 @@ def release_profile(crate_root: Path) -> tuple[dict[str, object], list[str]]:
     try:
         import tomllib
     except ModuleNotFoundError:
-        notes.append("profile not mirrored (tomllib requires Python >= 3.11)")
-        return profile, notes
+        try:
+            import tomli as tomllib  # declared dep for Python 3.10
+        except ModuleNotFoundError:
+            notes.append("profile not mirrored (no tomllib/tomli)")
+            return profile, notes
     from perfmeasure.languages.rust.discover import cargo_metadata
     try:
         root_manifest = Path(
@@ -141,11 +144,16 @@ def _arm(fn: dict) -> str:
         if style == "none":                  # Option<T>: None type-infers
             some = p.get("type_ref")
             if some:
-                # planner may flip None -> Some(fixed) after a rejection
+                # planner may flip None -> Some(fixed) after a rejection.
+                # The owned option rides the prep tuple, constructed fresh
+                # per call — a value built once in the arm is MOVED by the
+                # first call and the harness fails to compile (owned inner
+                # types like Option<String> died exactly there)
                 lines.append(
-                    f'            let a{i} = if req.inputs[{i}].spec_type '
-                    f'== "opt_some" {{ {some} }} else {{ None }};')
-                exprs.append(f"a{i}")
+                    f'            let opt{i}_some = '
+                    f'req.inputs[{i}].spec_type == "opt_some";')
+                exprs.append(f"__p.{len(own)}")
+                own.append(f"if opt{i}_some {{ {some} }} else {{ None }}")
             else:
                 exprs.append("None")
             continue
