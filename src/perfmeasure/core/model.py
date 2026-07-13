@@ -11,7 +11,7 @@ import platform
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-TOOL_VERSION = "0.7.0"
+TOOL_VERSION = "0.7.1"
 # bumped whenever generator streams or the measurement schedule change:
 # a JSON record is only input-reproducible against the same generator_rev
 GENERATOR_REV = 4   # rev 4: portable fids reseed all inputs (seeds derive

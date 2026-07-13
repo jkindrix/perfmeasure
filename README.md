@@ -115,8 +115,17 @@ undrivable-by-design.
 Current run: **96/96 time classes** (84 exact, rest ambiguous-containing-truth, mean ambiguity width 1.65), **30/30 space classes**, **10/10 undrivable recall** — full gate in ~186 s.
 <!-- gate:end -->
 One honest caveat: the fitter's thresholds are calibrated against this
-same corpus, so the gate measures fit-to-corpus plus regression teeth,
-not held-out generalization — there is no independent accuracy proof.
+same corpus, so the gate itself measures fit-to-corpus plus regression
+teeth. The independent check is a **sealed held-out corpus**
+(`python evals/heldout.py`): 26 stdlib/literature functions whose
+labels are cited from external documentation and were pre-registered
+before the first scored run. v1 scored **26/26 time classes (24
+exact), 12/12 space** — matching the calibration gate's exactness on
+curves the thresholds never saw (results committed verbatim in
+`evals/heldout/results-v1.txt`; a replication run agreed on every
+count). Small and stdlib-flavored, so this is evidence, not proof; the
+sealing lifecycle — any case consulted for a tuning decision retires
+into the calibration corpus — is documented in the corpus header.
 Drivability on real projects is tracked separately as a regression
 metric (`python evals/wild.py`); wild functions have no ground-truth
 classes, so that sweep checks drivability, not accuracy.

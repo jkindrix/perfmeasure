@@ -1,0 +1,31 @@
+first_plus_last           T=O(1)                     S=O(1)       ok
+text_length               T=O(1)                     S=O(1)       ok
+bisect_probe              T=O(log n) | O(1)          S=O(1)       ok
+int_bisection             T=O(n) | O(log n)          S=O(1)       ok
+count_sevens              T=O(n log n) | O(n)        S=O(1)       ok
+find_impossible           T=O(n log n) | O(n)        S=O(1)       ok
+split_on_a                T=O(n log n) | O(n)        S=O(n)       ok
+counter_build             T=O(n log n) | O(n)        S=O(n)       ok
+deque_build               T=O(n log n) | O(n)        S=O(n)       ok
+set_build                 T=O(n log n) | O(n)        S=O(n)       ok
+accumulate_list           T=O(n log n) | O(n)        S=O(n log n) ok
+sha256_digest             T=O(n log n) | O(n)        S=O(1)       ok
+b64_roundtrip_len         T=O(n)                     S=O(n)       ok
+json_dump_len             T=O(n log n) | O(n)        S=O(n)       ok
+shuffle_copy              T=O(n log n) | O(n)        S=O(n)       ok
+insort_copy               T=O(n log n) | O(n)        S=O(n)       ok
+dict_values_sum           T=O(n log n) | O(n)        S=O(1)       ok
+heapify_min               T=O(n log n) | O(n)        S=O(n)       ok
+regex_scan                T=O(n log n) | O(n)        S=O(log n)   ok
+sorted_by_abs             T=O(n^2) | O(n log n)      S=O(n log n) ok
+counter_ranked            T=O(n log n) | O(n)        S=O(n)       ok
+nsmallest_half            T=O(n log n)               S=O(n log n) ok
+median_value              T=O(n^2) | O(n log n)      S=O(n)       ok
+closest_pair_brute        T=O(n^2)                   S=O(n)       ok
+triples_summing_to_seven  T=O(n^3)                   S=O(1)       ok
+full_binary_walk          T=O(2^n)                   S=-          ok
+
+held-out time:  26/26 pass (24/26 exact, rest ambiguous-contains-truth; mean width 1.73; 0 pass only via pre-registered adjacency; 0 width violation(s))
+exact by class: O(1) 2/2, O(2^n) 1/1, O(log n) 1/2, O(n log n) 3/4, O(n) 15/15, O(n^2) 1/1, O(n^3) 1/1
+held-out space: 12/12 pass
+wall: 54s

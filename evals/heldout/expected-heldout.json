@@ -1,0 +1,123 @@
+{
+  "_protocol": "v1, sealed 2026-07-13. Labels pre-registered before the first scored run; citations are the label's source. time_any entries were granted at authoring time only where the calibration corpus already documents the same cache physics (random-access memory-bound linear code may read one class high in wall time) — never after seeing results.",
+  "first_plus_last": {
+    "time": "O(1)",
+    "note": "list indexing is O(1) — CPython list docs"
+  },
+  "text_length": {
+    "time": "O(1)",
+    "note": "len() is O(1) — CPython docs"
+  },
+  "bisect_probe": {
+    "time": "O(log n)",
+    "note": "bisect_left is O(log n) — CPython bisect docs"
+  },
+  "int_bisection": {
+    "time": "O(log n)",
+    "note": "binary search over [0, n) — standard literature"
+  },
+  "count_sevens": {
+    "time": "O(n)",
+    "note": "list.count scans the whole list — CPython listobject"
+  },
+  "find_impossible": {
+    "time": "O(n)",
+    "note": "str.find linear scan; needle cannot occur in generated a-z text"
+  },
+  "split_on_a": {
+    "time": "O(n)",
+    "space": "O(n)",
+    "note": "str.split single pass producing O(n) pieces"
+  },
+  "counter_build": {
+    "time": "O(n)",
+    "time_any": ["O(n)", "O(n log n)"],
+    "space": "O(n)",
+    "note": "Counter = dict counting, O(n) — collections docs; cache policy: random 64-bit keys into a multi-MB dict (calibration precedent: dedup_with_set)"
+  },
+  "deque_build": {
+    "time": "O(n)",
+    "space": "O(n)",
+    "note": "deque construction appends n items, O(1) each — collections docs"
+  },
+  "set_build": {
+    "time": "O(n)",
+    "time_any": ["O(n)", "O(n log n)"],
+    "space": "O(n)",
+    "note": "set construction O(n) expected — CPython; cache policy: random hash inserts (calibration precedent: dedup_with_set)"
+  },
+  "accumulate_list": {
+    "time": "O(n)",
+    "space": "O(n)",
+    "note": "itertools.accumulate single pass — itertools docs"
+  },
+  "sha256_digest": {
+    "time": "O(n)",
+    "note": "streaming hash, single pass over input — FIPS 180-4"
+  },
+  "b64_roundtrip_len": {
+    "time": "O(n)",
+    "note": "base64 encodes 3->4 bytes in one pass — RFC 4648 / CPython binascii"
+  },
+  "json_dump_len": {
+    "time": "O(n)",
+    "note": "serializing n constant-width ints is linear — CPython json (C accelerated)"
+  },
+  "shuffle_copy": {
+    "time": "O(n)",
+    "time_any": ["O(n)", "O(n log n)"],
+    "space": "O(n)",
+    "note": "Fisher-Yates, n swaps — Knuth TAOCP v2; cache policy: random index access into a multi-MB list"
+  },
+  "insort_copy": {
+    "time": "O(n)",
+    "space": "O(n)",
+    "note": "bisect docs: insort's insertion step is O(n) (memmove); the copy is also linear"
+  },
+  "dict_values_sum": {
+    "time": "O(n)",
+    "note": "values() iteration over the dict table, one pass — CPython dictobject"
+  },
+  "heapify_min": {
+    "time": "O(n)",
+    "time_any": ["O(n)", "O(n log n)"],
+    "space": "O(n)",
+    "note": "heapq docs: 'Transform list x into a heap, in-place, in linear time'; cache policy: sift children at 2i stride over a multi-MB list"
+  },
+  "regex_scan": {
+    "time": "O(n)",
+    "note": "constant pattern scan; 40 z's cannot occur in generated a-z text"
+  },
+  "sorted_by_abs": {
+    "time": "O(n log n)",
+    "space": "O(n)",
+    "note": "Timsort comparison sort — CPython sorted() docs; worst across shapes (sorted input runs O(n), random does not)"
+  },
+  "counter_ranked": {
+    "time": "O(n log n)",
+    "space": "O(n)",
+    "note": "most_common() with no argument sorts the ~n unique random keys — collections source"
+  },
+  "nsmallest_half": {
+    "time": "O(n log n)",
+    "space": "O(n)",
+    "note": "heapq docs: nsmallest is O(n log k); k = n/2 makes it O(n log n)"
+  },
+  "median_value": {
+    "time": "O(n log n)",
+    "space": "O(n)",
+    "note": "statistics.median sorts its input — CPython statistics source"
+  },
+  "closest_pair_brute": {
+    "time": "O(n^2)",
+    "note": "all-pairs brute force — standard literature (CLRS exercise)"
+  },
+  "triples_summing_to_seven": {
+    "time": "O(n^3)",
+    "note": "triple nested loop over n items"
+  },
+  "full_binary_walk": {
+    "time": "O(2^n)",
+    "note": "T(n) = 2T(n-1) + O(1) — full binary recursion tree"
+  }
+}

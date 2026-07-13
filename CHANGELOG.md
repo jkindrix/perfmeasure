@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.1 (2026-07-13)
+
+- **Held-out accuracy validation** (the gate's circularity caveat now
+  has an answer): `evals/heldout.py` scores a sealed corpus of 26
+  stdlib/literature functions whose complexity labels are cited from
+  external documentation (CPython docs, heapq/bisect docs, FIPS 180-4,
+  Knuth, CLRS) and were pre-registered before the first scored run —
+  the fitter's thresholds have never been calibrated against these
+  curves. v1 result, verbatim: 26/26 time classes truth-in-candidates
+  (24/26 exact headline, mean width 1.69, zero adjacency passes),
+  12/12 space — matching the calibration gate's exactness (87.5%
+  exact) on unseen curves. Sealing lifecycle documented in the corpus
+  header: a case consulted for any tuning decision retires into the
+  calibration corpus and is replaced. The only pre-freeze run was a
+  provenance-only drivability smoke (`--smoke` prints no classes).
+
 ## 0.7.0 (2026-07-13)
 
 Burn-down from an independent external audit (different reviewer, every
