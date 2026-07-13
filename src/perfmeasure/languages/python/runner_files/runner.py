@@ -403,6 +403,14 @@ def base_line(fn):
         return 0
 
 
+def _fid_path(path: str) -> str:
+    """Portable identity: the path relative to the target root (the
+    runner's cwd) — baselines and input seeds (seeded per fid) must
+    survive a checkout living at a different absolute path. The `file`
+    field keeps the absolute path for diagnostics."""
+    return os.path.relpath(os.path.abspath(path))
+
+
 def do_discover(req):
     functions, only = [], req.get("only")
     for path in req["files"]:
@@ -410,7 +418,7 @@ def do_discover(req):
             mod = _import_file(path)
         except BaseException:
             functions.append({
-                "fid": f"{os.path.abspath(path)}::<module>", "file": path,
+                "fid": f"{_fid_path(path)}::<module>", "file": path,
                 "line": 0, "params": [], "drivable": False,
                 "skip_reason": "import_failed: "
                                + traceback.format_exc(limit=3).strip()[-500:]})
@@ -424,7 +432,7 @@ def do_discover(req):
             if getattr(fn, "__module__", None) != mod.__name__ \
                     or name.startswith("_"):
                 continue
-            fid = f"{os.path.abspath(path)}::{fn.__qualname__}"
+            fid = f"{_fid_path(path)}::{fn.__qualname__}"
             if only and fid != only:
                 continue
             _fn_cache[fid] = fn
@@ -432,7 +440,7 @@ def do_discover(req):
         for cname, cls in inspect.getmembers(mod, inspect.isclass):
             if cls.__module__ != mod.__name__ or cname.startswith("_"):
                 continue
-            cfid = f"{os.path.abspath(path)}::{cls.__qualname__}"
+            cfid = f"{_fid_path(path)}::{cls.__qualname__}"
             if not _constructible(cls):
                 if not only:
                     functions.append({
@@ -708,10 +716,22 @@ def _fingerprint(obj):
         idx = range(0, k, max(1, k // 16))
         return ("list", k, tuple(repr(obj[i])[:24] for i in idx))
     if isinstance(obj, dict):
-        items = list(obj.items())[:8]
-        return ("dict", len(obj), tuple(repr(i)[:32] for i in items))
+        # spread sample (not the first items): same-length mutation deep
+        # in the dict must move the fingerprint too
+        items = list(obj.items())
+        k = len(items)
+        idx = range(0, k, max(1, k // 8))
+        return ("dict", k, tuple(repr(items[i])[:32] for i in idx))
     if isinstance(obj, (set, frozenset)):
-        return ("set", len(obj))
+        # length alone is blind to remove-one-add-one churn; sample
+        # content (iteration order is deterministic for equal content,
+        # and any content change reshuffles it)
+        sample = []
+        for i, x in enumerate(obj):
+            if i >= 16:
+                break
+            sample.append(repr(x)[:24])
+        return ("set", len(obj), tuple(sorted(sample)))
     return ("opaque", id(obj))
 
 

@@ -42,16 +42,36 @@ def test_regression_vs_ambiguous_baseline_uses_old_worst():
     assert not r["regressions"] and not r["warnings"]
 
 
-def test_drivability_loss_warns():
+def test_drivability_loss_is_continuity_not_regression():
     r = diff_reports([_rep("f::a", None, prov="UNDRIVABLE")],
                      [_base("f::a", "O(n)")])
     assert not r["regressions"]
-    assert "UNDRIVABLE" in r["warnings"][0]
+    assert "UNDRIVABLE" in r["continuity"][0]
 
 
-def test_vanished_function_warns():
+def test_vanished_function_is_continuity():
     r = diff_reports([], [_base("f::a", "O(n)")])
-    assert "not measured now" in r["warnings"][0]
+    assert "not measured now" in r["continuity"][0]
+    assert r["matched"] == 0
+
+
+def test_matched_counts_only_baseline_hits():
+    r = diff_reports([_rep("f::a", "O(n)"), _rep("f::b", "O(n)")],
+                     [_base("f::a", "O(n)")])
+    assert r["matched"] == 1
+    assert r["new_functions"] == ["f::b"]
+
+
+def test_foreign_generator_rev_is_surfaced():
+    from perfmeasure.core.model import GENERATOR_REV
+    old = _base("f::a", "O(n)")
+    old["environment"] = {"generator_rev": GENERATOR_REV - 1}
+    r = diff_reports([_rep("f::a", "O(n)")], [old])
+    assert r["baseline_generator_revs_foreign"] == [GENERATOR_REV - 1]
+    same = _base("f::b", "O(n)")
+    same["environment"] = {"generator_rev": GENERATOR_REV}
+    r2 = diff_reports([_rep("f::b", "O(n)")], [same])
+    assert r2["baseline_generator_revs_foreign"] == []
 
 
 def test_new_function_listed():

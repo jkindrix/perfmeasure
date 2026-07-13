@@ -14,7 +14,9 @@ def _fname(report: FunctionReport) -> str:
     if not path:
         return f"?::{qual}"
     if os.sep in path or path.endswith(".py"):
-        return f"{os.path.relpath(path)}::{qual}"
+        if os.path.isabs(path):
+            return f"{os.path.relpath(path)}::{qual}"
+        return report.fid   # already target-root-relative
     return report.fid   # crate::module::fn — not a filesystem path
 
 

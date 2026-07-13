@@ -12,6 +12,7 @@ Options: --json, --budget SECONDS, --rescue SECONDS, --verbose,
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -59,7 +60,9 @@ def measure_target(file: str, qualname: str | None, budget: Budget,
     interpreter, how = plugin.resolve_interpreter(root)
     session = RunnerSession(plugin.runner_command(root))
     try:
-        only = f"{file_path}::{qualname}" if qualname else None
+        # fids are target-root-relative (portable identity); match that
+        only = (f"{os.path.relpath(file_path, root)}::{qualname}"
+                if qualname else None)
         resp = session.request(
             protocol.discover_msg(session.next_id(), [str(file_path)], only),
             timeout=60.0)
@@ -145,6 +148,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="baseline JSON from a previous `scan --json`")
     diff_p.add_argument("--budget", type=float, default=10.0)
     diff_p.add_argument("--exclude", action="append", default=[])
+    diff_p.add_argument("--strict", action="store_true",
+                        help="also fail on continuity losses: baseline "
+                             "functions that vanished or no longer measure")
     for p in (fn, scan_p, diff_p):
         p.add_argument("--json", action="store_true")
         p.add_argument("--verbose", action="store_true")
@@ -187,7 +193,20 @@ def main(argv: list[str] | None = None) -> int:
             print(_json.dumps(result, indent=2))
         else:
             print(render_diff(result))
-        return 1 if result["regressions"] else 0
+        if baseline and not result["matched"]:
+            # zero comparisons must never read as green (a baseline from
+            # another checkout used to produce exactly this and exit 0)
+            print(f"error: 0 of {len(baseline)} baseline functions "
+                  "matched the current measurement — nothing was "
+                  "compared. Baselines from before 0.7.0 use "
+                  "absolute-path ids; regenerate with `scan --json`.",
+                  file=sys.stderr)
+            return 1
+        if result["regressions"]:
+            return 1
+        if args.strict and result["continuity"]:
+            return 1
+        return 0
     if args.json:
         if summary is not None:
             import json as _json

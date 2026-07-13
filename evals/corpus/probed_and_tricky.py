@@ -85,3 +85,22 @@ def passthrough(xs: list[int]) -> list[int]:
 def step_alloc(xs: list[int]) -> bytearray:
     per = 8 if len(xs) <= 4096 else 16
     return bytearray(per * len(xs))
+
+
+# --- same-length set churn: removes the 8 smallest, adds 8 new. len()
+#     never moves, so a length-only fingerprint read this as pure and
+#     re-timed dirtied state. Must flag mutates_input.
+def set_churn(s: set[int]) -> int:
+    for x in sorted(s)[:8]:
+        s.discard(x)
+        s.add(-x - 1_000_003)
+    return len(s)
+
+
+# --- same-length dict churn away from the head: flips values across the
+#     whole dict without changing length or the first few items. Must
+#     flag mutates_input.
+def dict_value_churn(d: dict[int, int]) -> int:
+    for k in list(d)[::3]:
+        d[k] = d[k] ^ 1
+    return len(d)

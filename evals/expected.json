@@ -329,6 +329,17 @@
     "time": "O(1)",
     "space": "O(1)"
   },
+  "set_churn": {
+    "time": "O(n log n)",
+    "time_any": ["O(n log n)", "O(n)"],
+    "expect_flag": "mutates_input",
+    "note": "same-length churn: len-only fingerprints read this as pure"
+  },
+  "dict_value_churn": {
+    "time": "O(n)",
+    "time_any": ["O(n)", "O(n log n)"],
+    "expect_flag": "mutates_input"
+  },
   "step_alloc": {
     "time": "O(n)",
     "space": "O(n)",

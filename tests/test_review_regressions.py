@@ -105,3 +105,26 @@ def test_shape_semantics_key_types_and_order():
 def test_fast_materializers_are_deterministic():
     assert _mat("list_int", "random") == _mat("list_int", "random")
     assert _mat("str_", "random") == _mat("str_", "random")
+
+
+def test_set_fingerprint_sees_same_length_churn():
+    # remove-one-add-one keeps len constant; a length-only fingerprint
+    # classified the mutator as pure and re-timed dirtied state
+    s = set(range(100))
+    before = pyrunner._fingerprint(s)
+    assert before == pyrunner._fingerprint(set(range(100)))  # stable
+    s.discard(0)
+    s.add(-1_000_003)
+    assert pyrunner._fingerprint(s) != before
+
+
+def test_dict_fingerprint_sees_deep_value_churn():
+    # first-8-items sampling was blind to same-length mutation past the head
+    d = {i: i for i in range(100)}
+    before = pyrunner._fingerprint(d)
+    assert before == pyrunner._fingerprint({i: i for i in range(100)})
+    d[97] ^= 1
+    changed = pyrunner._fingerprint(d) != before
+    for k in list(d)[::3]:          # heavier churn must always be seen
+        d[k] = d[k] ^ 1
+    assert changed or pyrunner._fingerprint(d) != before
